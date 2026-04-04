@@ -1,0 +1,74 @@
+experiment:
+  output_dir: outputs/whisper-small-multiset
+  tensorboard_dir: outputs/whisper-small-multiset/tensorboard
+  seed: 42
+  run_name: whisper-small-multiset
+  save_config_snapshot: true
+
+cache:
+  root_dir: .cache
+  model_dir: .cache/models
+  dataset_dir: .cache/datasets
+
+model:
+  name_or_path: openai/whisper-small
+  language: en
+  task: transcribe
+  freeze_encoder: false
+  generation_max_length: 225
+  remove_encoder_input_length_restriction: true
+
+data:
+  audio_sampling_rate: 16000
+  preprocessing_num_workers: 4
+  min_audio_seconds: 0.1
+  max_audio_seconds: 30.0
+  text_normalization:
+    lowercase: false
+    strip: true
+    collapse_whitespace: true
+  datasets:
+    - repo_id: mozilla-foundation/common_voice_17_0
+      config_name: en
+      alias: common_voice_en
+      train_split: train
+      validation_split: validation
+      audio_column: audio
+      text_column: sentence
+    - repo_id: speechcolab/gigaspeech
+      alias: gigaspeech_ratio_val
+      train_split: train
+      validation_from_train_ratio: 0.02
+      validation_from_train_seed: 42
+      audio_column: audio
+      text_column: text
+
+training:
+  per_device_train_batch_size: 8
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 2
+  learning_rate: 1.0e-5
+  warmup_steps: 500
+  num_train_epochs: 3
+  max_steps: -1
+  lr_scheduler_type: linear
+  logging_steps: 25
+  eval_steps: 250
+  save_steps: 250
+  save_total_limit: 3
+  generation_num_beams: 1
+  predict_with_generate: true
+  report_to:
+    - tensorboard
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  dataloader_num_workers: 4
+  load_best_model_at_end: true
+  metric_for_best_model: wer
+  greater_is_better: false
+  optim: adamw_torch
+  weight_decay: 0.01
+  label_smoothing_factor: 0.0
+  max_grad_norm: 1.0
+  deepspeed_config: deepspeed/zero1.json

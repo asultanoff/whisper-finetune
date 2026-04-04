@@ -1,0 +1,98 @@
+experiment:
+  output_dir: outputs/whisper-small-akmalsultanov
+  tensorboard_dir: outputs/whisper-small-akmalsultanov/tensorboard
+  seed: 42
+  run_name: whisper-small-akmalsultanov
+  unique_output_dir: true
+  save_config_snapshot: true
+
+cache:
+  root_dir: .cache
+  model_dir: .cache/models
+  dataset_dir: .cache/datasets
+
+hub:
+  enabled: false
+  repo_id: akmalsultanov/whisper-small-akmalsultanov
+  private: true
+  token_env_var: HF_TOKEN
+  commit_message: Upload final Whisper finetune artifacts
+  replace_existing_repo_files: true
+  export_subdir: hf-export
+
+model:
+  name_or_path: openai/whisper-small
+  task: transcribe
+  freeze_encoder: false
+  generation_max_length: 225
+  remove_encoder_input_length_restriction: true
+
+data:
+  audio_sampling_rate: 16000
+  preprocessing_num_workers: 4
+  min_audio_seconds: 0.1
+  max_audio_seconds: 30.0
+  text_normalization:
+    lowercase: false
+    strip: true
+    collapse_whitespace: true
+  datasets:
+    - repo_id: akmalsultanov/lb_tg_raw_4k
+      alias: lb_tg_raw_4k
+      train_split: train
+      validation_from_train_ratio: 0.05
+      validation_from_train_seed: 42
+      audio_column: audio
+      text_column: transcription
+    - repo_id: akmalsultanov/lb_xorazm
+      alias: lb_xorazm
+      train_split: train
+      validation_from_train_ratio: 0.05
+      validation_from_train_seed: 42
+      audio_column: audio
+      text_column: transcription
+    - repo_id: akmalsultanov/sarf_full
+      alias: sarf_full
+      train_split: train
+      validation_from_train_ratio: 0.05
+      validation_from_train_seed: 42
+      audio_column: audio
+      text_column: transcription
+    - repo_id: akmalsultanov/odamiylik_mulki
+      alias: odamiylik_mulki
+      train_split: train
+      validation_split: test
+      audio_column: audio_path
+      text_column: text
+
+training:
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 2
+  learning_rate: 1.0e-4
+  warmup_ratio: 0.15
+  num_train_epochs: 5
+  max_steps: -1
+  lr_scheduler_type: linear
+  logging_steps: 25
+  eval_steps: 750
+  save_steps: 750
+  save_total_limit: 3
+  generation_num_beams: 1
+  predict_with_generate: true
+  report_to:
+    - tensorboard
+  fp16: false
+  bf16: true
+  gradient_checkpointing: false
+  dataloader_num_workers: 16
+  train_sampling_strategy: group_by_length
+  length_grouping_key: text
+  load_best_model_at_end: true
+  metric_for_best_model: wer
+  greater_is_better: false
+  optim: adamw_torch
+  weight_decay: 0.01
+  label_smoothing_factor: 0.0
+  max_grad_norm: 1.0
+  deepspeed_config: deepspeed/zero1.json
