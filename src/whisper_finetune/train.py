@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 
+from .augmentation import build_waveform_augmenter
 from .collator import DataCollatorSpeechSeq2SeqWithPadding
 from .config import AppConfig, load_config, save_config
 from .data import LENGTH_COLUMN_NAMES, add_length_grouping_column, load_dataset_bundle, normalize_text
@@ -120,6 +121,14 @@ def _resolve_tensorboard_dir(base_output_dir: Path, base_tensorboard_dir: Path, 
     return resolved_output_dir / relative
 
 
+def _resolve_tensorboard_dir_for_output(base_output_dir: Path, base_tensorboard_dir: Path, resolved_output_dir: Path) -> Path:
+    try:
+        relative = base_tensorboard_dir.relative_to(base_output_dir)
+    except ValueError:
+        return base_tensorboard_dir
+    return resolved_output_dir / relative
+
+
 def _resolve_experiment_paths(
     config: AppConfig,
     *,
@@ -144,19 +153,55 @@ def _resolve_experiment_paths(
     config.experiment.run_name = f"{config.experiment.run_name}-{suffix}"
 
 
+def _resolve_resume_from_output_dir(config: AppConfig) -> str | None:
+    if not config.training.resume_from_output_dir:
+        return None
+
+    from transformers.trainer_utils import get_last_checkpoint
+
+    resume_path = Path(config.training.resume_from_output_dir)
+    if not resume_path.exists():
+        raise FileNotFoundError(f"Resume output directory not found: {resume_path}")
+
+    if resume_path.is_dir() and resume_path.name.startswith("checkpoint-"):
+        checkpoint_dir = resume_path
+        output_dir = resume_path.parent
+    else:
+        checkpoint = get_last_checkpoint(str(resume_path))
+        if checkpoint is None:
+            raise FileNotFoundError(f"No checkpoint-* directories found in: {resume_path}")
+        checkpoint_dir = Path(checkpoint)
+        output_dir = resume_path
+
+    base_output_dir = Path(config.experiment.output_dir)
+    base_tensorboard_dir = Path(config.experiment.tensorboard_dir)
+    config.experiment.output_dir = str(output_dir)
+    config.experiment.tensorboard_dir = str(
+        _resolve_tensorboard_dir_for_output(base_output_dir, base_tensorboard_dir, output_dir)
+    )
+    config.experiment.unique_output_dir = False
+
+    return str(checkpoint_dir)
+
+
 def _prepare_model(config: AppConfig) -> tuple[Any, Any]:
     _, _, WhisperForConditionalGeneration, WhisperProcessor, _ = _trainer_dependencies()
 
     if config.model.remove_encoder_input_length_restriction:
         enable_whisper_encoder_input_length_patch()
 
+    load_source = config.model.load_source
+    from_pretrained_kwargs: dict[str, Any] = {}
+    if not Path(load_source).exists():
+        from_pretrained_kwargs["cache_dir"] = config.cache.model_dir
+
     processor = WhisperProcessor.from_pretrained(
-        config.model.name_or_path,
-        cache_dir=config.cache.model_dir,
+        load_source,
+        **from_pretrained_kwargs,
     )
     model = WhisperForConditionalGeneration.from_pretrained(
-        config.model.name_or_path,
-        cache_dir=config.cache.model_dir,
+        load_source,
+        **from_pretrained_kwargs,
     )
 
     if config.model.language:
@@ -278,11 +323,13 @@ def _build_trainer(
     training_args: Any,
 ) -> Any:
     Seq2SeqTrainer, _, _, _, _ = _trainer_dependencies()
+    augmenter = build_waveform_augmenter(config.data.audio_augmentation)
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
         text_normalization=config.data.text_normalization,
         remove_encoder_input_length_restriction=config.model.remove_encoder_input_length_restriction,
+        augmenter=augmenter,
     )
     trainer_kwargs = {
         "model": model,
@@ -315,6 +362,7 @@ def _log_bundle(bundle: Any) -> None:
 def run_training(config: AppConfig) -> None:
     _, _, _, _, set_seed = _trainer_dependencies()
     set_seed(config.experiment.seed)
+    resume_from_checkpoint = _resolve_resume_from_output_dir(config)
     _validate_deepspeed_config(config)
     _configure_single_process_deepspeed_env(config)
     _resolve_experiment_paths(config)
@@ -346,7 +394,7 @@ def run_training(config: AppConfig) -> None:
         eval_dataset=eval_dataset,
         training_args=training_args,
     )
-    train_result = trainer.train()
+    train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     trainer.save_model()
     processor.save_pretrained(output_dir)
     trainer.log_metrics("train", train_result.metrics)

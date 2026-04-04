@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import torch
 
+from .augmentation import WaveformAugmenter
 from .config import TextNormalizationConfig
 from .data import normalize_text
 
@@ -15,20 +17,40 @@ class DataCollatorSpeechSeq2SeqWithPadding:
     decoder_start_token_id: int
     text_normalization: TextNormalizationConfig
     remove_encoder_input_length_restriction: bool = False
+    augmenter: WaveformAugmenter | None = None
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         if not features:
             raise ValueError("features must not be empty")
 
-        audios = [feature["audio"] for feature in features]
-        sampling_rates = {audio["sampling_rate"] for audio in audios}
+        audio_items = [feature["audio"] for feature in features]
+        sampling_rates = {audio["sampling_rate"] for audio in audio_items}
         if len(sampling_rates) != 1:
             raise ValueError(f"Expected a single sampling rate in batch, found: {sorted(sampling_rates)}")
+        sampling_rate = audio_items[0]["sampling_rate"]
+
+        audio_arrays = []
+        for index, (feature, audio) in enumerate(zip(features, audio_items, strict=True)):
+            waveform = np.asarray(audio["array"], dtype=np.float32)
+            if self.augmenter is not None:
+                waveform = self.augmenter.maybe_augment(
+                    waveform,
+                    sample_id=str(feature.get("__sample_id", f"sample-{index}")),
+                    dataset_name=str(feature.get("__source_dataset", "")),
+                    dataset_repo_id=(
+                        None
+                        if feature.get("__source_repo_id") is None
+                        else str(feature.get("__source_repo_id"))
+                    ),
+                    dataset_split=str(feature.get("__source_split", "train")),
+                    sample_rate=sampling_rate,
+                )
+            audio_arrays.append(waveform)
 
         padding = "longest" if self.remove_encoder_input_length_restriction else "max_length"
         batch = self.processor.feature_extractor(
-            [audio["array"] for audio in audios],
-            sampling_rate=audios[0]["sampling_rate"],
+            audio_arrays,
+            sampling_rate=sampling_rate,
             padding=padding,
             truncation=False,
             return_attention_mask=True,

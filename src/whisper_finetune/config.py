@@ -22,6 +22,40 @@ def _positive_optional(value: int | None, field_name: str) -> None:
         raise ConfigError(f"{field_name} must be > 0 when provided")
 
 
+def _validate_probability(value: float, field_name: str) -> None:
+    if not 0.0 <= value <= 1.0:
+        raise ConfigError(f"{field_name} must be in the interval [0, 1]")
+
+
+def _parse_float_range(value: Any, field_name: str, *, minimum: float) -> tuple[float, float]:
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        if parsed < minimum:
+            raise ConfigError(f"{field_name} must be >= {minimum}")
+        return parsed, parsed
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ConfigError(f"{field_name} must be a number or a [min, max] pair")
+    start = float(value[0])
+    end = float(value[1])
+    if start < minimum or end < start:
+        raise ConfigError(f"{field_name} must have {minimum} <= min <= max")
+    return start, end
+
+
+def _parse_int_range(value: Any, field_name: str, *, minimum: int) -> tuple[int, int]:
+    if isinstance(value, int):
+        if value < minimum:
+            raise ConfigError(f"{field_name} must be >= {minimum}")
+        return value, value
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ConfigError(f"{field_name} must be an int or a [min, max] pair")
+    start = int(value[0])
+    end = int(value[1])
+    if start < minimum or end < start:
+        raise ConfigError(f"{field_name} must have {minimum} <= min <= max")
+    return start, end
+
+
 @dataclass(slots=True)
 class TextNormalizationConfig:
     lowercase: bool = False
@@ -37,6 +71,273 @@ class TextNormalizationConfig:
             lowercase=bool(raw.get("lowercase", False)),
             strip=bool(raw.get("strip", True)),
             collapse_whitespace=bool(raw.get("collapse_whitespace", True)),
+        )
+
+
+@dataclass(slots=True)
+class CodecAugmentationConfig:
+    p: float = 0.0
+    modes: dict[str, float] = field(default_factory=dict)
+    sample_rate: int = 8000
+    highpass_hz: float = 350.0
+    lowpass_hz: float = 3000.0
+    roundtrips: int = 2
+
+    def __post_init__(self) -> None:
+        _validate_probability(self.p, "data.audio_augmentation.profiles[].codec.p")
+        if self.sample_rate < 4000:
+            raise ConfigError("data.audio_augmentation.profiles[].codec.sample_rate must be >= 4000")
+        if self.highpass_hz < 0.0:
+            raise ConfigError("data.audio_augmentation.profiles[].codec.highpass_hz must be >= 0")
+        if self.lowpass_hz <= self.highpass_hz:
+            raise ConfigError(
+                "data.audio_augmentation.profiles[].codec.lowpass_hz must be greater than highpass_hz"
+            )
+        if self.roundtrips <= 0:
+            raise ConfigError("data.audio_augmentation.profiles[].codec.roundtrips must be > 0")
+        allowed_modes = {"mulaw_narrowband", "gsm_narrowband"}
+        unknown_modes = sorted(set(self.modes) - allowed_modes)
+        if unknown_modes:
+            raise ConfigError(
+                "data.audio_augmentation.profiles[].codec.modes contains unsupported values: "
+                + ", ".join(unknown_modes)
+            )
+        for name, weight in self.modes.items():
+            if weight <= 0:
+                raise ConfigError(
+                    f"data.audio_augmentation.profiles[].codec.modes.{name} must be > 0"
+                )
+        if self.p > 0.0 and not self.modes:
+            raise ConfigError("data.audio_augmentation.profiles[].codec.modes is required when codec.p > 0")
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "CodecAugmentationConfig | None":
+        if raw is None:
+            return None
+        allowed = {"p", "modes", "sample_rate", "highpass_hz", "lowpass_hz", "roundtrips"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[].codec")
+        modes_raw = raw.get("modes", {})
+        if not isinstance(modes_raw, dict):
+            raise ConfigError("data.audio_augmentation.profiles[].codec.modes must be a mapping")
+        return cls(
+            p=float(raw.get("p", 0.0)),
+            modes={str(name): float(weight) for name, weight in modes_raw.items()},
+            sample_rate=int(raw.get("sample_rate", 8000)),
+            highpass_hz=float(raw.get("highpass_hz", 350.0)),
+            lowpass_hz=float(raw.get("lowpass_hz", 3000.0)),
+            roundtrips=int(raw.get("roundtrips", 2)),
+        )
+
+
+@dataclass(slots=True)
+class PacketLossAugmentationConfig:
+    p: float = 0.0
+    burst_ms: tuple[int, int] = (20, 80)
+    bursts: tuple[int, int] = (1, 2)
+    fill: str = "zero"
+
+    def __post_init__(self) -> None:
+        _validate_probability(self.p, "data.audio_augmentation.profiles[].packet_loss.p")
+        if self.fill not in {"zero", "hold"}:
+            raise ConfigError("data.audio_augmentation.profiles[].packet_loss.fill must be one of: zero, hold")
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "PacketLossAugmentationConfig | None":
+        if raw is None:
+            return None
+        allowed = {"p", "burst_ms", "bursts", "fill"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[].packet_loss")
+        return cls(
+            p=float(raw.get("p", 0.0)),
+            burst_ms=_parse_int_range(raw.get("burst_ms", [20, 80]), "data.audio_augmentation.profiles[].packet_loss.burst_ms", minimum=1),
+            bursts=_parse_int_range(raw.get("bursts", [1, 2]), "data.audio_augmentation.profiles[].packet_loss.bursts", minimum=1),
+            fill=str(raw.get("fill", "zero")),
+        )
+
+
+@dataclass(slots=True)
+class ClippingAugmentationConfig:
+    p: float = 0.0
+    threshold: tuple[float, float] = (0.75, 0.95)
+
+    def __post_init__(self) -> None:
+        _validate_probability(self.p, "data.audio_augmentation.profiles[].clipping.p")
+        if self.threshold[0] <= 0.0 or self.threshold[1] > 1.0:
+            raise ConfigError(
+                "data.audio_augmentation.profiles[].clipping.threshold must be within (0, 1]"
+            )
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "ClippingAugmentationConfig | None":
+        if raw is None:
+            return None
+        allowed = {"p", "threshold"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[].clipping")
+        return cls(
+            p=float(raw.get("p", 0.0)),
+            threshold=_parse_float_range(
+                raw.get("threshold", [0.75, 0.95]),
+                "data.audio_augmentation.profiles[].clipping.threshold",
+                minimum=1e-4,
+            ),
+        )
+
+
+@dataclass(slots=True)
+class NoiseAugmentationConfig:
+    p: float = 0.0
+    snr_db: tuple[float, float] = (18.0, 30.0)
+
+    def __post_init__(self) -> None:
+        _validate_probability(self.p, "data.audio_augmentation.profiles[].noise.p")
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "NoiseAugmentationConfig | None":
+        if raw is None:
+            return None
+        allowed = {"p", "snr_db"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[].noise")
+        return cls(
+            p=float(raw.get("p", 0.0)),
+            snr_db=_parse_float_range(
+                raw.get("snr_db", [18.0, 30.0]),
+                "data.audio_augmentation.profiles[].noise.snr_db",
+                minimum=0.0,
+            ),
+        )
+
+
+@dataclass(slots=True)
+class ReverbAugmentationConfig:
+    p: float = 0.0
+    rt60_ms: tuple[float, float] = (80.0, 220.0)
+
+    def __post_init__(self) -> None:
+        _validate_probability(self.p, "data.audio_augmentation.profiles[].reverb.p")
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "ReverbAugmentationConfig | None":
+        if raw is None:
+            return None
+        allowed = {"p", "rt60_ms"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[].reverb")
+        return cls(
+            p=float(raw.get("p", 0.0)),
+            rt60_ms=_parse_float_range(
+                raw.get("rt60_ms", [80.0, 220.0]),
+                "data.audio_augmentation.profiles[].reverb.rt60_ms",
+                minimum=1.0,
+            ),
+        )
+
+
+@dataclass(slots=True)
+class AudioAugmentationProfileConfig:
+    codec: CodecAugmentationConfig | None = None
+    packet_loss: PacketLossAugmentationConfig | None = None
+    clipping: ClippingAugmentationConfig | None = None
+    noise: NoiseAugmentationConfig | None = None
+    reverb: ReverbAugmentationConfig | None = None
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "AudioAugmentationProfileConfig":
+        allowed = {"codec", "packet_loss", "clipping", "noise", "reverb"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[]")
+        return cls(
+            codec=CodecAugmentationConfig.from_dict(raw.get("codec")),
+            packet_loss=PacketLossAugmentationConfig.from_dict(raw.get("packet_loss")),
+            clipping=ClippingAugmentationConfig.from_dict(raw.get("clipping")),
+            noise=NoiseAugmentationConfig.from_dict(raw.get("noise")),
+            reverb=ReverbAugmentationConfig.from_dict(raw.get("reverb")),
+        )
+
+
+@dataclass(slots=True)
+class DatasetAudioAugmentationPolicyConfig:
+    enabled: bool = False
+    profile: str | None = None
+    splits: tuple[str, ...] = ("train",)
+    apply_p: float = 1.0
+
+    def __post_init__(self) -> None:
+        _validate_probability(self.apply_p, "data.audio_augmentation.datasets[].apply_p")
+        if self.enabled and not self.profile:
+            raise ConfigError("data.audio_augmentation.datasets[].profile is required when enabled is true")
+        if not self.splits:
+            raise ConfigError("data.audio_augmentation.datasets[].splits must contain at least one split")
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any], *, train_only: bool) -> "DatasetAudioAugmentationPolicyConfig":
+        allowed = {"enabled", "profile", "splits", "apply_p"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation.datasets[]")
+        splits_raw = raw.get("splits")
+        if splits_raw is None:
+            splits = ("train",) if train_only else ("train", "validation", "test")
+        else:
+            if not isinstance(splits_raw, (list, tuple)) or not splits_raw:
+                raise ConfigError("data.audio_augmentation.datasets[].splits must be a non-empty list")
+            splits = tuple(str(split) for split in splits_raw if str(split))
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            profile=(None if raw.get("profile") is None else str(raw.get("profile"))),
+            splits=splits,
+            apply_p=float(raw.get("apply_p", 1.0)),
+        )
+
+
+@dataclass(slots=True)
+class AudioAugmentationConfig:
+    enabled: bool = False
+    seed: int = 0
+    train_only: bool = True
+    mode: str = "deterministic_per_sample"
+    ffmpeg_bin: str = "ffmpeg"
+    datasets: dict[str, DatasetAudioAugmentationPolicyConfig] = field(default_factory=dict)
+    profiles: dict[str, AudioAugmentationProfileConfig] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.mode != "deterministic_per_sample":
+            raise ConfigError(
+                "data.audio_augmentation.mode must be 'deterministic_per_sample'"
+            )
+        if self.enabled:
+            if not self.datasets:
+                raise ConfigError("data.audio_augmentation.datasets is required when augmentation is enabled")
+            if not self.profiles:
+                raise ConfigError("data.audio_augmentation.profiles is required when augmentation is enabled")
+        for dataset_name, policy in self.datasets.items():
+            if policy.enabled and policy.profile not in self.profiles:
+                raise ConfigError(
+                    f"data.audio_augmentation.datasets.{dataset_name}.profile references unknown profile {policy.profile!r}"
+                )
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "AudioAugmentationConfig":
+        if raw is None:
+            return cls()
+        allowed = {"enabled", "seed", "train_only", "mode", "ffmpeg_bin", "datasets", "profiles"}
+        _unknown_keys(raw, allowed, "data.audio_augmentation")
+        train_only = bool(raw.get("train_only", True))
+        datasets_raw = raw.get("datasets", {})
+        profiles_raw = raw.get("profiles", {})
+        if not isinstance(datasets_raw, dict):
+            raise ConfigError("data.audio_augmentation.datasets must be a mapping")
+        if not isinstance(profiles_raw, dict):
+            raise ConfigError("data.audio_augmentation.profiles must be a mapping")
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            seed=int(raw.get("seed", 0)),
+            train_only=train_only,
+            mode=str(raw.get("mode", "deterministic_per_sample")),
+            ffmpeg_bin=str(raw.get("ffmpeg_bin", "ffmpeg")),
+            datasets={
+                str(name): DatasetAudioAugmentationPolicyConfig.from_dict(value, train_only=train_only)
+                for name, value in datasets_raw.items()
+            },
+            profiles={
+                str(name): AudioAugmentationProfileConfig.from_dict(value)
+                for name, value in profiles_raw.items()
+            },
         )
 
 
@@ -136,6 +437,7 @@ class DataConfig:
     min_audio_seconds: float = 0.0
     max_audio_seconds: float | None = 30.0
     text_normalization: TextNormalizationConfig = field(default_factory=TextNormalizationConfig)
+    audio_augmentation: AudioAugmentationConfig = field(default_factory=AudioAugmentationConfig)
 
     def __post_init__(self) -> None:
         if not self.datasets:
@@ -156,6 +458,7 @@ class DataConfig:
             "min_audio_seconds",
             "max_audio_seconds",
             "text_normalization",
+            "audio_augmentation",
         }
         _unknown_keys(raw, allowed, "data")
         datasets_raw = raw.get("datasets")
@@ -170,6 +473,7 @@ class DataConfig:
                 None if raw.get("max_audio_seconds") is None else float(raw.get("max_audio_seconds"))
             ),
             text_normalization=TextNormalizationConfig.from_dict(raw.get("text_normalization")),
+            audio_augmentation=AudioAugmentationConfig.from_dict(raw.get("audio_augmentation")),
         )
 
 
@@ -506,6 +810,14 @@ def load_config(path: str | Path) -> AppConfig:
     if not isinstance(raw, dict):
         raise ConfigError("Config root must be a mapping")
     config = AppConfig.from_dict(raw)
+    if config.model.init_from_output_dir:
+        init_path = Path(config.model.init_from_output_dir)
+        if not init_path.is_absolute():
+            config.model.init_from_output_dir = str((config_path.parent / init_path).resolve())
+    if config.training.resume_from_output_dir:
+        resume_path = Path(config.training.resume_from_output_dir)
+        if not resume_path.is_absolute():
+            config.training.resume_from_output_dir = str((config_path.parent / resume_path).resolve())
     if config.training.deepspeed_config:
         deepspeed_path = Path(config.training.deepspeed_config)
         if not deepspeed_path.is_absolute():

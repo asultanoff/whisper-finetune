@@ -23,6 +23,7 @@ dev = [
 
 [project.scripts]
 whisper-finetune-train = "whisper_finetune.train:main"
+whisper-finetune-export-augments = "whisper_finetune.export_augmented_samples:main"
 
 [build-system]
 requires = ["hatchling>=1.26.0"]

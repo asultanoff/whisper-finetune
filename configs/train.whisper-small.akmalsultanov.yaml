@@ -36,6 +36,54 @@ data:
     lowercase: false
     strip: true
     collapse_whitespace: true
+  audio_augmentation:
+    enabled: true
+    seed: 42
+    train_only: true
+    mode: deterministic_per_sample
+    datasets:
+      lb_tg_raw_4k:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.95
+      lb_xorazm:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.95
+      sarf_full:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.95
+      odamiylik_mulki:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.95
+    profiles:
+      phone_like:
+        codec:
+          p: 0.95
+          modes:
+            mulaw_narrowband: 0.7
+            gsm_narrowband: 0.3
+          sample_rate: 8000
+          highpass_hz: 320.0
+          lowpass_hz: 2700.0
+          roundtrips: 2
+        noise:
+          p: 0.15
+          snr_db: [18.0, 28.0]
+        clipping:
+          p: 0.2
+          threshold: [0.65, 0.82]
+        packet_loss:
+          p: 0.35
+          burst_ms: [30, 120]
+          bursts: [1, 3]
+          fill: hold
   datasets:
     - repo_id: akmalsultanov/lb_tg_raw_4k
       alias: lb_tg_raw_4k

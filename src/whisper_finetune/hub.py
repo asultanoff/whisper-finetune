@@ -27,7 +27,7 @@ def _build_model_card(config: AppConfig, dataset_summaries: list[Any], train_met
     )
     return f"""# Whisper Finetune Export
 
-Base model: `{config.model.name_or_path}`
+Base model: `{config.model.load_source}`
 
 ## Training datasets
 {dataset_lines}

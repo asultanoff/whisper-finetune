@@ -35,6 +35,7 @@ class FakeFeatureExtractor:
                 "return_attention_mask": return_attention_mask,
                 "return_tensors": return_tensors,
                 "frame_lengths": frame_lengths,
+                "audio_sums": [float(sum(audio)) for audio in audio_arrays],
             }
         )
         return {
@@ -109,3 +110,64 @@ def test_collator_uses_max_length_padding_when_encoder_patch_is_disabled() -> No
     assert batch["input_features"].shape == (2, 80, 3000)
     assert batch["attention_mask"].shape == (2, 3000)
     assert feature_extractor.calls[-1]["padding"] == "max_length"
+
+
+def test_collator_applies_audio_augmentation_before_feature_extraction() -> None:
+    class FakeAugmenter:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def maybe_augment(
+            self,
+            waveform,
+            *,
+            sample_id,
+            dataset_name,
+            dataset_repo_id,
+            dataset_split,
+            sample_rate,
+        ):
+            self.calls.append(
+                {
+                    "sample_id": sample_id,
+                    "dataset_name": dataset_name,
+                    "dataset_repo_id": dataset_repo_id,
+                    "dataset_split": dataset_split,
+                    "sample_rate": sample_rate,
+                }
+            )
+            return waveform + 1.0
+
+    feature_extractor = FakeFeatureExtractor()
+    augmenter = FakeAugmenter()
+    processor = SimpleNamespace(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
+    collator = DataCollatorSpeechSeq2SeqWithPadding(
+        processor=processor,
+        decoder_start_token_id=1,
+        text_normalization=TextNormalizationConfig(),
+        augmenter=augmenter,
+    )
+
+    collator(
+        [
+            {
+                "audio": {"array": [0.0] * 1600, "sampling_rate": 16000},
+                "text": "a",
+                "__sample_id": "sample-1",
+                "__source_dataset": "demo",
+                "__source_repo_id": "org/demo",
+                "__source_split": "train",
+            }
+        ]
+    )
+
+    assert augmenter.calls == [
+        {
+            "sample_id": "sample-1",
+            "dataset_name": "demo",
+            "dataset_repo_id": "org/demo",
+            "dataset_split": "train",
+            "sample_rate": 16000,
+        }
+    ]
+    assert feature_extractor.calls[-1]["audio_sums"] == [1600.0]

@@ -99,7 +99,12 @@ def _canonicalize_columns(dataset: Any, dataset_config: DatasetConfig, split_nam
 
     size = len(dataset)
     dataset = dataset.add_column("__source_dataset", [dataset_config.source_name] * size)
+    dataset = dataset.add_column("__source_repo_id", [dataset_config.repo_id] * size)
     dataset = dataset.add_column("__source_split", [split_name] * size)
+    dataset = dataset.add_column(
+        "__sample_id",
+        [f"{dataset_config.source_name}:{split_name}:{index}" for index in range(size)],
+    )
     dataset = dataset.cast_column("audio", datasets.Audio(sampling_rate=sampling_rate))
     return dataset
 
