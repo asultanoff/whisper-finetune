@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from whisper_finetune.config import AppConfig, ConfigError, load_config
+from whisper_finetune.config import AppConfig, ConfigError, load_config, save_config_artifacts
 from whisper_finetune.train import (
     _configure_single_process_deepspeed_env,
     _resolve_experiment_paths,
@@ -283,6 +283,11 @@ def test_data_config_accepts_audio_augmentation_profiles_and_policies() -> None:
                     },
                     "profiles": {
                         "phone": {
+                            "codec": {
+                                "p": 0.5,
+                                "backend": "fast",
+                                "modes": {"mulaw_narrowband": 1.0},
+                            },
                             "noise": {"p": 1.0, "snr_db": [10.0, 20.0]},
                             "clipping": {"p": 0.1, "threshold": [0.8, 0.95]},
                         }
@@ -302,7 +307,46 @@ def test_data_config_accepts_audio_augmentation_profiles_and_policies() -> None:
 
     assert config.data.audio_augmentation.enabled is True
     assert config.data.audio_augmentation.datasets["org/dataset"].profile == "phone"
+    assert config.data.audio_augmentation.profiles["phone"].codec is not None
+    assert config.data.audio_augmentation.profiles["phone"].codec.backend == "fast"
     assert config.data.audio_augmentation.profiles["phone"].noise is not None
+
+
+def test_data_config_rejects_unknown_codec_backend() -> None:
+    with pytest.raises(ConfigError):
+        AppConfig.from_dict(
+            {
+                "model": {"name_or_path": "openai/whisper-small"},
+                "data": {
+                    "audio_augmentation": {
+                        "enabled": True,
+                        "datasets": {
+                            "org/dataset": {
+                                "enabled": True,
+                                "profile": "phone",
+                            }
+                        },
+                        "profiles": {
+                            "phone": {
+                                "codec": {
+                                    "p": 1.0,
+                                    "backend": "invalid",
+                                    "modes": {"mulaw_narrowband": 1.0},
+                                }
+                            }
+                        },
+                    },
+                    "datasets": [
+                        {
+                            "repo_id": "org/dataset",
+                            "train_split": "train",
+                            "audio_column": "audio",
+                            "text_column": "text",
+                        }
+                    ],
+                },
+            }
+        )
 
 
 def test_data_config_rejects_unknown_audio_augmentation_profile_reference() -> None:
@@ -525,3 +569,29 @@ def test_single_process_deepspeed_env_bootstrap(monkeypatch) -> None:
     assert os.environ["LOCAL_RANK"] == "0"
     assert os.environ["MASTER_ADDR"] == "127.0.0.1"
     assert os.environ["MASTER_PORT"] == "29500"
+
+
+def test_save_config_artifacts_writes_resolved_and_original_training_config(tmp_path: Path) -> None:
+    config = AppConfig.from_dict(
+        {
+            "model": {"name_or_path": "openai/whisper-small"},
+            "data": {
+                "datasets": [
+                    {
+                        "repo_id": "org/dataset",
+                        "train_split": "train",
+                        "audio_column": "audio",
+                        "text_column": "text",
+                    }
+                ]
+            },
+        }
+    )
+    source_config = tmp_path / "train.yaml"
+    source_config.write_text("model:\n  name_or_path: openai/whisper-small\n", encoding="utf-8")
+    target_dir = tmp_path / "artifacts"
+
+    save_config_artifacts(config, target_dir, source_config_path=source_config)
+
+    assert (target_dir / "resolved-config.yaml").is_file()
+    assert (target_dir / "training-config.yaml").read_text(encoding="utf-8") == source_config.read_text(encoding="utf-8")

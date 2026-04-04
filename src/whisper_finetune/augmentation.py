@@ -68,6 +68,46 @@ def _sample_int_range(rng: np.random.Generator, bounds: tuple[int, int]) -> int:
     return int(rng.integers(start, end + 1))
 
 
+def _resample_linear(waveform: np.ndarray, *, source_rate: int, target_rate: int) -> np.ndarray:
+    if waveform.size == 0 or source_rate == target_rate:
+        return np.ascontiguousarray(waveform.astype(np.float32, copy=False))
+    target_length = max(1, int(round(waveform.shape[0] * float(target_rate) / float(source_rate))))
+    source_positions = np.arange(waveform.shape[0], dtype=np.float32)
+    target_positions = np.linspace(0.0, waveform.shape[0] - 1, num=target_length, dtype=np.float32)
+    return np.ascontiguousarray(np.interp(target_positions, source_positions, waveform).astype(np.float32))
+
+
+def _fft_band_limit(waveform: np.ndarray, *, sample_rate: int, low_hz: float, high_hz: float) -> np.ndarray:
+    if waveform.size < 2:
+        return np.ascontiguousarray(waveform.astype(np.float32, copy=False))
+    cutoff_high = min(float(high_hz), sample_rate * 0.5 - 50.0)
+    if cutoff_high <= low_hz:
+        return np.zeros_like(waveform, dtype=np.float32)
+    spectrum = np.fft.rfft(waveform.astype(np.float32, copy=False))
+    freqs = np.fft.rfftfreq(waveform.shape[0], d=1.0 / float(sample_rate))
+    mask = (freqs >= float(low_hz)) & (freqs <= cutoff_high)
+    filtered = np.fft.irfft(spectrum * mask, n=waveform.shape[0]).astype(np.float32, copy=False)
+    return np.ascontiguousarray(filtered)
+
+
+def _mulaw_roundtrip(waveform: np.ndarray) -> np.ndarray:
+    mu = 255.0
+    clipped = np.clip(waveform, -1.0, 1.0).astype(np.float32, copy=False)
+    encoded = np.sign(clipped) * np.log1p(mu * np.abs(clipped)) / np.log1p(mu)
+    quantized = np.round((encoded + 1.0) * 0.5 * mu)
+    restored = (quantized / mu) * 2.0 - 1.0
+    decoded = np.sign(restored) * (np.expm1(np.abs(restored) * np.log1p(mu)) / mu)
+    return np.ascontiguousarray(decoded.astype(np.float32, copy=False))
+
+
+def _gsm_like_roundtrip(waveform: np.ndarray) -> np.ndarray:
+    clipped = np.clip(waveform, -1.0, 1.0).astype(np.float32, copy=False)
+    held = np.repeat(clipped[::2], 2)[: clipped.shape[0]]
+    quantized = np.round(held * 31.0) / 31.0
+    smoothed = np.convolve(quantized, np.asarray([0.2, 0.6, 0.2], dtype=np.float32), mode="same")
+    return np.ascontiguousarray(smoothed.astype(np.float32, copy=False))
+
+
 class WaveformAugmenter:
     """Dataset-aware, deterministic waveform corruption applied before Whisper feature extraction."""
 
@@ -198,6 +238,31 @@ class WaveformAugmenter:
 
         raise RuntimeError(f"Unsupported codec mode requested for audio augmentation: {mode!r}")
 
+    @staticmethod
+    def _codec_roundtrip_fast(
+        waveform: np.ndarray,
+        *,
+        mode: str,
+        cfg: CodecAugmentationConfig,
+        sample_rate: int,
+    ) -> np.ndarray:
+        narrowband = _resample_linear(waveform, source_rate=sample_rate, target_rate=cfg.sample_rate)
+        narrowband = _fft_band_limit(
+            narrowband,
+            sample_rate=cfg.sample_rate,
+            low_hz=cfg.highpass_hz,
+            high_hz=cfg.lowpass_hz,
+        )
+
+        if mode == "mulaw_narrowband":
+            corrupted = _mulaw_roundtrip(narrowband)
+        elif mode == "gsm_narrowband":
+            corrupted = _gsm_like_roundtrip(narrowband)
+        else:
+            raise RuntimeError(f"Unsupported codec mode requested for audio augmentation: {mode!r}")
+
+        return _resample_linear(corrupted, source_rate=cfg.sample_rate, target_rate=sample_rate)
+
     def _apply_codec(
         self,
         waveform: np.ndarray,
@@ -213,9 +278,14 @@ class WaveformAugmenter:
         weights = weights / weights.sum()
         mode = mode_names[int(rng.choice(len(mode_names), p=weights))]
         for _ in range(cfg.roundtrips):
-            out = _limit_peak(
-                self._codec_roundtrip(out, mode=mode, cfg=cfg, sample_id=sample_id, sample_rate=sample_rate)
-            )
+            if cfg.backend == "ffmpeg":
+                out = _limit_peak(
+                    self._codec_roundtrip(out, mode=mode, cfg=cfg, sample_id=sample_id, sample_rate=sample_rate)
+                )
+            else:
+                out = _limit_peak(
+                    self._codec_roundtrip_fast(out, mode=mode, cfg=cfg, sample_rate=sample_rate)
+                )
         return out
 
     @staticmethod

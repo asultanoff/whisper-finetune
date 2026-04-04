@@ -25,6 +25,7 @@ multiple Hugging Face dataset repos with per-dataset schema and split rules.
 - DeepSpeed support
 - grouped batching by similar audio lengths or text lengths
 - cleaned final model export and optional private Hugging Face upload
+- save both the resolved config and original launch YAML with each run
 - resume training from a previous output folder
 - initialize a fresh new run from a previous output folder
 - unique output directories per run by default
@@ -45,7 +46,8 @@ HF_TOKEN=hf_...
 ```
 
 If you enable codec-style telephony augmentation, make sure `ffmpeg` is
-available on the machine that runs training.
+available on the machine that runs training when you choose
+`codec.backend: ffmpeg`. The default fast backend is fully in-process.
 
 ## Run
 
@@ -94,7 +96,10 @@ experiment:
 ```
 
 `unique_output_dir: true` appends a timestamped suffix so each run writes to a
-new folder.
+new folder. The run directory also stores:
+
+- `resolved-config.yaml`: the fully resolved config snapshot used at runtime
+- `training-config.yaml`: the original YAML you launched with
 
 ### `cache`
 
@@ -190,6 +195,7 @@ data:
       phone_like:
         codec:
           p: 0.95
+          backend: fast
           modes:
             mulaw_narrowband: 0.7
             gsm_narrowband: 0.3
@@ -212,8 +218,17 @@ data:
 
 Dataset policy keys match the dataset alias if one is configured, otherwise the
 dataset repo id. For telephony-style training, codec roundtrips plus packet
-loss and clipping are much more useful than broadband white noise. Codec
-corruption requires `ffmpeg`.
+loss and clipping are much more useful than broadband white noise.
+
+Codec backend options:
+
+- `backend: fast`
+  - default
+  - fully in-process narrowband/codec approximation
+  - much faster for training
+- `backend: ffmpeg`
+  - slower, because it spawns subprocess codec roundtrips per sample
+  - use only when you specifically want exact ffmpeg-driven codec behavior
 
 ### `training`
 
@@ -305,6 +320,7 @@ The export includes:
 - final model artifacts
 - processor/tokenizer files
 - `resolved-config.yaml`
+- `training-config.yaml`
 - `train_results.json`
 - `eval_results.json` when available
 - `trainer_state.json`

@@ -135,3 +135,50 @@ def test_waveform_augmenter_can_match_by_repo_id() -> None:
 
     assert augmented.shape == waveform.shape
     assert not np.allclose(augmented, waveform)
+
+
+def test_waveform_augmenter_fast_codec_backend_changes_waveform_shape_preserved() -> None:
+    augmenter = WaveformAugmenter(
+        AudioAugmentationConfig.from_dict(
+            {
+                "enabled": True,
+                "seed": 11,
+                "datasets": {
+                    "demo": {
+                        "enabled": True,
+                        "profile": "phone",
+                        "splits": ["train"],
+                        "apply_p": 1.0,
+                    }
+                },
+                "profiles": {
+                    "phone": {
+                        "codec": {
+                            "p": 1.0,
+                            "backend": "fast",
+                            "modes": {
+                                "mulaw_narrowband": 1.0,
+                            },
+                            "sample_rate": 8000,
+                            "highpass_hz": 320.0,
+                            "lowpass_hz": 2700.0,
+                            "roundtrips": 1,
+                        }
+                    }
+                },
+            }
+        )
+    )
+    waveform = _waveform(seconds=1.3)
+
+    augmented = augmenter.maybe_augment(
+        waveform,
+        sample_id="sample-1",
+        dataset_name="demo",
+        dataset_repo_id="org/demo",
+        dataset_split="train",
+        sample_rate=16000,
+    )
+
+    assert augmented.shape == waveform.shape
+    assert not np.allclose(augmented, waveform)

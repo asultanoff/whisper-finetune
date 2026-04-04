@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,7 @@ class TextNormalizationConfig:
 @dataclass(slots=True)
 class CodecAugmentationConfig:
     p: float = 0.0
+    backend: str = "fast"
     modes: dict[str, float] = field(default_factory=dict)
     sample_rate: int = 8000
     highpass_hz: float = 350.0
@@ -85,6 +87,8 @@ class CodecAugmentationConfig:
 
     def __post_init__(self) -> None:
         _validate_probability(self.p, "data.audio_augmentation.profiles[].codec.p")
+        if self.backend not in {"fast", "ffmpeg"}:
+            raise ConfigError("data.audio_augmentation.profiles[].codec.backend must be one of: fast, ffmpeg")
         if self.sample_rate < 4000:
             raise ConfigError("data.audio_augmentation.profiles[].codec.sample_rate must be >= 4000")
         if self.highpass_hz < 0.0:
@@ -114,13 +118,14 @@ class CodecAugmentationConfig:
     def from_dict(cls, raw: dict[str, Any] | None) -> "CodecAugmentationConfig | None":
         if raw is None:
             return None
-        allowed = {"p", "modes", "sample_rate", "highpass_hz", "lowpass_hz", "roundtrips"}
+        allowed = {"p", "backend", "modes", "sample_rate", "highpass_hz", "lowpass_hz", "roundtrips"}
         _unknown_keys(raw, allowed, "data.audio_augmentation.profiles[].codec")
         modes_raw = raw.get("modes", {})
         if not isinstance(modes_raw, dict):
             raise ConfigError("data.audio_augmentation.profiles[].codec.modes must be a mapping")
         return cls(
             p=float(raw.get("p", 0.0)),
+            backend=str(raw.get("backend", "fast")),
             modes={str(name): float(weight) for name, weight in modes_raw.items()},
             sample_rate=int(raw.get("sample_rate", 8000)),
             highpass_hz=float(raw.get("highpass_hz", 350.0)),
@@ -830,3 +835,22 @@ def save_config(config: AppConfig, path: str | Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as f:
         yaml.safe_dump(config.to_dict(), f, sort_keys=False)
+
+
+def save_config_artifacts(
+    config: AppConfig,
+    target_dir: str | Path,
+    *,
+    source_config_path: str | Path | None = None,
+) -> None:
+    destination = Path(target_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    save_config(config, destination / "resolved-config.yaml")
+
+    if source_config_path is None:
+        return
+
+    source = Path(source_config_path)
+    if not source.is_file():
+        raise FileNotFoundError(f"Training config source file not found: {source}")
+    shutil.copy2(source, destination / "training-config.yaml")

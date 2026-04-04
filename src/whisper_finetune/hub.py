@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from .config import AppConfig, save_config
+from .config import AppConfig, save_config_artifacts
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -52,6 +52,7 @@ def upload_final_artifacts_to_hub(
     train_metrics: dict[str, Any],
     eval_metrics: dict[str, Any] | None,
     dataset_summaries: list[Any],
+    source_config_path: str | None = None,
 ) -> None:
     if not config.hub.enabled:
         return
@@ -82,7 +83,7 @@ def upload_final_artifacts_to_hub(
 
         trainer.save_model(str(export_dir))
         processor.save_pretrained(str(export_dir))
-        save_config(config, export_dir / "resolved-config.yaml")
+        save_config_artifacts(config, export_dir, source_config_path=source_config_path)
 
         _write_json(export_dir / "train_results.json", train_metrics)
         if eval_metrics is not None:

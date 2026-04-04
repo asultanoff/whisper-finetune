@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 from .augmentation import build_waveform_augmenter
 from .collator import DataCollatorSpeechSeq2SeqWithPadding
-from .config import AppConfig, load_config, save_config
+from .config import AppConfig, load_config, save_config_artifacts
 from .data import LENGTH_COLUMN_NAMES, add_length_grouping_column, load_dataset_bundle, normalize_text
 from .hub import upload_final_artifacts_to_hub
 from .metrics import word_error_rate
@@ -359,7 +359,7 @@ def _log_bundle(bundle: Any) -> None:
         )
 
 
-def run_training(config: AppConfig) -> None:
+def run_training(config: AppConfig, *, source_config_path: str | None = None) -> None:
     _, _, _, _, set_seed = _trainer_dependencies()
     set_seed(config.experiment.seed)
     resume_from_checkpoint = _resolve_resume_from_output_dir(config)
@@ -376,7 +376,7 @@ def run_training(config: AppConfig) -> None:
     logging.info("run_name=%s output_dir=%s", config.experiment.run_name, config.experiment.output_dir)
 
     if config.experiment.save_config_snapshot:
-        save_config(config, output_dir / "resolved-config.yaml")
+        save_config_artifacts(config, output_dir, source_config_path=source_config_path)
 
     processor, model = _prepare_model(config)
     bundle = load_dataset_bundle(config)
@@ -414,6 +414,7 @@ def run_training(config: AppConfig) -> None:
         train_metrics=train_result.metrics,
         eval_metrics=eval_metrics,
         dataset_summaries=bundle.summaries,
+        source_config_path=source_config_path,
     )
 
 
@@ -422,7 +423,7 @@ def main() -> None:
     _configure_logging()
     args = parse_args()
     config = load_config(args.config)
-    run_training(config)
+    run_training(config, source_config_path=args.config)
 
 
 if __name__ == "__main__":
