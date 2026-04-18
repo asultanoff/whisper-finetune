@@ -385,4 +385,4 @@ training:
   weight_decay: 0.01
   label_smoothing_factor: 0.0
   max_grad_norm: 1.0
-  deepspeed_config: deepspeed/zero1.json
+  deepspeed_config: deepspeed/zero2.json
