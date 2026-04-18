@@ -13,7 +13,7 @@ cache:
 
 hub:
   enabled: true
-  repo_id: akmalsultanov/whisper-medium-stage_a_smoke
+  repo_id: akmalsultanov/whisper-medium-stage_a
   private: true
   token_env_var: HF_TOKEN
   commit_message: Upload final Whisper finetune artifacts
@@ -337,12 +337,12 @@ training:
   gradient_accumulation_steps: 2
   learning_rate: 1.0e-4
   warmup_ratio: 0.15
-  num_train_epochs: 6
-  max_steps: 25
+  num_train_epochs: 5
+  max_steps: -1
   lr_scheduler_type: linear
   logging_steps: 25
-  eval_steps: 15
-  save_steps: 15
+  eval_steps: 5000
+  save_steps: 5000
   save_total_limit: 3
   generation_num_beams: 1
   predict_with_generate: true
