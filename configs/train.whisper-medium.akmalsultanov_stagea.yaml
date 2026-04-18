@@ -42,11 +42,11 @@ data:
     train_only: true
     mode: deterministic_per_sample
     datasets:
-      usc_cleaned:
-        enabled: true
-        profile: phone_like
-        splits: [train]
-        apply_p: 0.8
+      # usc_cleaned:
+      #   enabled: true
+      #   profile: phone_like
+      #   splits: [train]
+      #   apply_p: 0.8
       lb_tg_raw_4k:
         enabled: true
         profile: phone_like
@@ -206,13 +206,13 @@ data:
       validation_split: test
       audio_column: audio_path
       text_column: text
-    - repo_id: akmalsultanov/usc_cleaned_ctc_filtered
-      alias: usc_cleaned
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio
-      text_column: text
+    # - repo_id: akmalsultanov/usc_cleaned_ctc_filtered
+    #   alias: usc_cleaned
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio
+    #   text_column: text
     - repo_id: akmalsultanov/usta_va_margarita_toy
       alias: usta_va_margarita
       language: uz
