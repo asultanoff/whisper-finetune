@@ -12,8 +12,8 @@ cache:
   dataset_dir: .cache/datasets
 
 hub:
-  enabled: false
-  repo_id: akmalsultanov/whisper-medium
+  enabled: true
+  repo_id: akmalsultanov/whisper-medium-stage_a_smoke
   private: true
   token_env_var: HF_TOKEN
   commit_message: Upload final Whisper finetune artifacts
@@ -338,7 +338,7 @@ training:
   learning_rate: 1.0e-4
   warmup_ratio: 0.15
   num_train_epochs: 5
-  max_steps: -1
+  max_steps: 50
   lr_scheduler_type: linear
   logging_steps: 25
   eval_steps: 10
