@@ -79,6 +79,47 @@ def _load_hf_split(dataset_config: DatasetConfig, split_name: str, default_cache
     return datasets.load_dataset(**kwargs)
 
 
+def _unique_temp_column(existing_columns: set[str], target_column: str) -> str:
+    index = 0
+    while True:
+        candidate = f"__whisper_finetune_tmp_{target_column}_{index}"
+        if candidate not in existing_columns:
+            existing_columns.add(candidate)
+            return candidate
+        index += 1
+
+
+def _rename_configured_columns(dataset: Any, column_mapping: dict[str, str]) -> Any:
+    renames = [
+        (source_column, target_column)
+        for target_column, source_column in column_mapping.items()
+        if source_column != target_column
+    ]
+    if not renames:
+        return dataset
+
+    existing_columns = set(dataset.column_names)
+    temp_to_target: list[tuple[str, str]] = []
+    for source_column, target_column in renames:
+        temp_column = _unique_temp_column(existing_columns, target_column)
+        dataset = dataset.rename_column(source_column, temp_column)
+        existing_columns.discard(source_column)
+        temp_to_target.append((temp_column, target_column))
+
+    conflicting_targets = [
+        target_column
+        for _, target_column in temp_to_target
+        if target_column in dataset.column_names
+    ]
+    if conflicting_targets:
+        dataset = dataset.remove_columns(conflicting_targets)
+
+    for temp_column, target_column in temp_to_target:
+        dataset = dataset.rename_column(temp_column, target_column)
+
+    return dataset
+
+
 def _canonicalize_columns(
     dataset: Any,
     dataset_config: DatasetConfig,
@@ -98,10 +139,13 @@ def _canonicalize_columns(
             f"{dataset_config.source_name} split '{split_name}' is missing required columns: {', '.join(missing)}"
         )
 
-    if dataset_config.audio_column != "audio":
-        dataset = dataset.rename_column(dataset_config.audio_column, "audio")
-    if dataset_config.text_column != "text":
-        dataset = dataset.rename_column(dataset_config.text_column, "text")
+    dataset = _rename_configured_columns(
+        dataset,
+        {
+            "audio": dataset_config.audio_column,
+            "text": dataset_config.text_column,
+        },
+    )
 
     size = len(dataset)
     dataset = dataset.add_column("__source_dataset", [dataset_config.source_name] * size)
