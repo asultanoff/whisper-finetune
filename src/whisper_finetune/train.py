@@ -229,6 +229,17 @@ def _prepare_model(config: AppConfig) -> tuple[Any, Any]:
     return processor, model
 
 
+def _resolve_max_label_tokens(config: AppConfig, model: Any) -> None:
+    if config.data.max_label_tokens is not None:
+        return
+    max_target_positions = getattr(model.config, "max_target_positions", None)
+    if max_target_positions is None:
+        return
+    # Labels contain language/task/notimestamps plus EOS after the decoder-start token is stripped.
+    config.data.max_label_tokens = max(1, int(max_target_positions) - 4)
+    logging.info("Resolved data.max_label_tokens=%s from model max_target_positions=%s", config.data.max_label_tokens, max_target_positions)
+
+
 def _validate_deepspeed_config(config: AppConfig) -> None:
     if not config.training.deepspeed_config:
         return
@@ -288,10 +299,21 @@ def _audio_duration_seconds(audio: Any) -> float:
     return len(audio["array"]) / float(audio["sampling_rate"])
 
 
-def _filter_example(example: dict[str, Any], config: AppConfig) -> bool:
+def _filter_example(
+    example: dict[str, Any],
+    config: AppConfig,
+    processor: Any | None = None,
+    max_label_tokens: int | None = None,
+) -> bool:
     text = normalize_text(example["text"], config.data.text_normalization)
     if not text:
         return False
+    if max_label_tokens is not None:
+        if processor is None:
+            raise ValueError("processor is required when max_label_tokens is set")
+        label_token_count = len(processor.tokenizer(text, add_special_tokens=False).input_ids)
+        if label_token_count > max_label_tokens:
+            return False
 
     try:
         duration_seconds = _audio_duration_seconds(example["audio"])
@@ -329,6 +351,7 @@ def _preprocess_cache_file(
         "audio_sampling_rate": config.data.audio_sampling_rate,
         "min_audio_seconds": config.data.min_audio_seconds,
         "max_audio_seconds": config.data.max_audio_seconds,
+        "max_label_tokens": config.data.max_label_tokens,
         "text_normalization": {
             "lowercase": config.data.text_normalization.lowercase,
             "strip": config.data.text_normalization.strip,
@@ -365,14 +388,52 @@ def _combined_preprocess_cache_file(
     return str(cache_root / f"combined-{stage}-{digest}.arrow")
 
 
+def _distributed_world_size() -> int:
+    return int(os.environ.get("WORLD_SIZE", "1"))
+
+
+def _distributed_rank() -> int:
+    return int(os.environ.get("RANK", "0"))
+
+
+def _is_rank_zero() -> bool:
+    return _distributed_rank() == 0
+
+
+def _distributed_barrier() -> None:
+    if _distributed_world_size() <= 1:
+        return
+    try:
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+            return
+    except Exception:
+        pass
+
+    try:
+        from accelerate.state import PartialState
+
+        PartialState().wait_for_everyone()
+    except Exception as exc:
+        raise RuntimeError("Distributed preprocessing barrier failed") from exc
+
+
 def _prepare_split(part: DatasetPart, config: AppConfig, split_name: str, processor: Any) -> Any | None:
     dataset = part.dataset
     if dataset is None:
         return None
 
     workers = config.data.preprocessing_num_workers
+    max_label_tokens = config.data.max_label_tokens
     dataset = dataset.filter(
-        lambda example: _filter_example(example, config),
+        lambda example: _filter_example(
+            example,
+            config,
+            processor=processor,
+            max_label_tokens=max_label_tokens,
+        ),
         num_proc=workers,
         desc=f"Filtering {split_name} examples",
         cache_file_name=_preprocess_cache_file(config, part, split_name=split_name, stage="filter"),
@@ -391,10 +452,29 @@ def _prepare_split(part: DatasetPart, config: AppConfig, split_name: str, proces
             split_name=split_name,
             stage=f"length-{config.training.length_grouping_key}",
         ),
+        load_from_cache_file=True,
     )
 
 
 def _prepare_split_parts(
+    parts: list[DatasetPart],
+    config: AppConfig,
+    split_name: str,
+    processor: Any,
+    *,
+    shuffle: bool,
+) -> Any | None:
+    if _distributed_world_size() > 1 and not _is_rank_zero():
+        _distributed_barrier()
+        return _prepare_split_parts_on_current_rank(parts, config, split_name, processor, shuffle=shuffle)
+
+    dataset = _prepare_split_parts_on_current_rank(parts, config, split_name, processor, shuffle=shuffle)
+    if _distributed_world_size() > 1:
+        _distributed_barrier()
+    return dataset
+
+
+def _prepare_split_parts_on_current_rank(
     parts: list[DatasetPart],
     config: AppConfig,
     split_name: str,
@@ -503,10 +583,11 @@ def run_training(config: AppConfig, *, source_config_path: str | None = None) ->
     os.environ["TENSORBOARD_LOGGING_DIR"] = config.experiment.tensorboard_dir
     logging.info("run_name=%s output_dir=%s", config.experiment.run_name, config.experiment.output_dir)
 
+    processor, model = _prepare_model(config)
+    _resolve_max_label_tokens(config, model)
     if config.experiment.save_config_snapshot:
         save_config_artifacts(config, output_dir, source_config_path=source_config_path)
 
-    processor, model = _prepare_model(config)
     bundle = load_dataset_bundle(config)
     _log_bundle(bundle)
 

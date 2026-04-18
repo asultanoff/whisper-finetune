@@ -213,6 +213,7 @@ def add_length_grouping_column(
     num_proc: int | None = None,
     split_name: str = "dataset",
     cache_file_name: str | None = None,
+    load_from_cache_file: bool = True,
 ) -> Any | None:
     if dataset is None or length_grouping_key is None:
         return dataset
@@ -230,7 +231,7 @@ def add_length_grouping_column(
             num_proc=num_proc,
             desc=f"Computing {length_grouping_key} lengths for {split_name}",
             cache_file_name=cache_file_name,
-            load_from_cache_file=True,
+            load_from_cache_file=load_from_cache_file,
         )
 
     if processor is None:
@@ -247,7 +248,7 @@ def add_length_grouping_column(
         num_proc=num_proc,
         desc=f"Computing {length_grouping_key} lengths for {split_name}",
         cache_file_name=cache_file_name,
-        load_from_cache_file=True,
+        load_from_cache_file=load_from_cache_file,
     )
 
 

@@ -58,6 +58,27 @@ def test_dataset_config_accepts_ratio_validation() -> None:
     assert dataset_config.validation_from_train_ratio == 0.1
 
 
+def test_data_config_accepts_max_label_tokens() -> None:
+    config = AppConfig.from_dict(
+        {
+            "model": {"name_or_path": "openai/whisper-small"},
+            "data": {
+                "max_label_tokens": 444,
+                "datasets": [
+                    {
+                        "repo_id": "org/dataset",
+                        "train_split": "train",
+                        "audio_column": "audio",
+                        "text_column": "text",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert config.data.max_label_tokens == 444
+
+
 def test_load_config_resolves_relative_deepspeed_path(tmp_path) -> None:
     config_dir = tmp_path / "configs"
     ds_dir = config_dir / "deepspeed"

@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from whisper_finetune.config import AppConfig
-from whisper_finetune.train import _audio_duration_seconds, _filter_example
+from whisper_finetune.train import _audio_duration_seconds, _filter_example, _resolve_max_label_tokens
 
 
 def _config() -> AppConfig:
@@ -55,3 +55,33 @@ def test_filter_example_skips_audio_decode_errors() -> None:
             raise RuntimeError("corrupt audio")
 
     assert _filter_example({"audio": BrokenAudio(), "text": "valid text"}, _config()) is False
+
+
+def test_filter_example_drops_overlong_text() -> None:
+    class FakeTokenizer:
+        def __call__(self, text, add_special_tokens=False):
+            return SimpleNamespace(input_ids=[1] * len(text.split()))
+
+    processor = SimpleNamespace(tokenizer=FakeTokenizer())
+
+    assert (
+        _filter_example(
+            {
+                "audio": MetadataAudio(),
+                "text": "one two three four five",
+            },
+            _config(),
+            processor=processor,
+            max_label_tokens=4,
+        )
+        is False
+    )
+
+
+def test_resolve_max_label_tokens_uses_model_decoder_capacity() -> None:
+    config = _config()
+    model = SimpleNamespace(config=SimpleNamespace(max_target_positions=448))
+
+    _resolve_max_label_tokens(config, model)
+
+    assert config.data.max_label_tokens == 444

@@ -444,6 +444,7 @@ class DataConfig:
     preprocessing_num_workers: int | None = None
     min_audio_seconds: float = 0.0
     max_audio_seconds: float | None = 30.0
+    max_label_tokens: int | None = None
     text_normalization: TextNormalizationConfig = field(default_factory=TextNormalizationConfig)
     audio_augmentation: AudioAugmentationConfig = field(default_factory=AudioAugmentationConfig)
 
@@ -456,6 +457,7 @@ class DataConfig:
             raise ConfigError("data.min_audio_seconds must be >= 0")
         if self.max_audio_seconds is not None and self.max_audio_seconds <= self.min_audio_seconds:
             raise ConfigError("data.max_audio_seconds must be greater than data.min_audio_seconds")
+        _positive_optional(self.max_label_tokens, "data.max_label_tokens")
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "DataConfig":
@@ -465,6 +467,7 @@ class DataConfig:
             "preprocessing_num_workers",
             "min_audio_seconds",
             "max_audio_seconds",
+            "max_label_tokens",
             "text_normalization",
             "audio_augmentation",
         }
@@ -480,6 +483,7 @@ class DataConfig:
             max_audio_seconds=(
                 None if raw.get("max_audio_seconds") is None else float(raw.get("max_audio_seconds"))
             ),
+            max_label_tokens=raw.get("max_label_tokens"),
             text_normalization=TextNormalizationConfig.from_dict(raw.get("text_normalization")),
             audio_augmentation=AudioAugmentationConfig.from_dict(raw.get("audio_augmentation")),
         )
