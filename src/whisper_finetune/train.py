@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 from .augmentation import build_waveform_augmenter
 from .collator import DataCollatorSpeechSeq2SeqWithPadding
-from .config import AppConfig, load_config, save_config_artifacts
+from .config import AppConfig, ConfigError, load_config, save_config_artifacts
 from .data import (
     LENGTH_COLUMN_NAMES,
     DatasetPart,
@@ -84,6 +84,7 @@ def _build_training_arguments(config: AppConfig, has_eval_dataset: bool) -> Any:
         "save_steps": config.training.save_steps,
         "save_total_limit": config.training.save_total_limit,
         "save_on_each_node": False,
+        "save_only_model": config.training.checkpoint_save_mode == "model_only",
         "save_safetensors": True,
         "predict_with_generate": config.training.predict_with_generate,
         "generation_max_length": config.model.generation_max_length,
@@ -218,7 +219,91 @@ def _resolve_resume_from_output_dir(config: AppConfig) -> str | None:
     )
     config.experiment.unique_output_dir = False
 
+    _validate_resume_checkpoint(config, checkpoint_dir)
     return str(checkpoint_dir)
+
+
+def _has_model_weight_file(checkpoint_dir: Path) -> bool:
+    return any(
+        (checkpoint_dir / name).is_file()
+        for name in ("model.safetensors", "pytorch_model.bin")
+    )
+
+
+def _deepspeed_global_step_dirs(checkpoint_dir: Path) -> list[Path]:
+    return sorted(path for path in checkpoint_dir.glob("global_step*") if path.is_dir())
+
+
+def _deepspeed_rank_ids(global_step_dir: Path) -> set[int]:
+    ranks: set[int] = set()
+    for path in global_step_dir.glob("*_optim_states.pt"):
+        match = re.search(r"zero_pp_rank_(\d+)_", path.name)
+        if match:
+            ranks.add(int(match.group(1)))
+    return ranks
+
+
+def _checkpoint_validation_errors(config: AppConfig, checkpoint_dir: Path, *, for_resume: bool) -> list[str]:
+    errors: list[str] = []
+    if not checkpoint_dir.is_dir():
+        return [f"checkpoint directory is missing: {checkpoint_dir}"]
+
+    trainer_state_path = checkpoint_dir / "trainer_state.json"
+    if not trainer_state_path.is_file():
+        errors.append(f"missing {trainer_state_path.name}")
+
+    if not _has_model_weight_file(checkpoint_dir):
+        errors.append("missing model.safetensors or pytorch_model.bin")
+
+    if config.training.deepspeed_config and (for_resume or config.training.checkpoint_save_mode == "full"):
+        global_step_dirs = _deepspeed_global_step_dirs(checkpoint_dir)
+        if not global_step_dirs:
+            errors.append("missing DeepSpeed global_step* directory")
+        else:
+            global_step_dir = global_step_dirs[-1]
+            if not any(global_step_dir.glob("*model_states.pt")):
+                errors.append(f"missing DeepSpeed model state file in {global_step_dir.name}")
+            if not any(global_step_dir.glob("*_optim_states.pt")):
+                errors.append(f"missing DeepSpeed optimizer state shards in {global_step_dir.name}")
+            world_size = _distributed_world_size()
+            if world_size > 1:
+                expected_ranks = set(range(world_size))
+                actual_ranks = _deepspeed_rank_ids(global_step_dir)
+                missing_ranks = sorted(expected_ranks - actual_ranks)
+                if missing_ranks:
+                    errors.append(
+                        "missing DeepSpeed optimizer state shards for ranks: "
+                        + ", ".join(str(rank) for rank in missing_ranks)
+                    )
+    elif for_resume and config.training.checkpoint_save_mode == "full":
+        for name in ("optimizer.pt", "scheduler.pt"):
+            if not (checkpoint_dir / name).is_file():
+                errors.append(f"missing {name}")
+
+    return errors
+
+
+def _validate_resume_checkpoint(config: AppConfig, checkpoint_dir: Path) -> None:
+    errors = _checkpoint_validation_errors(config, checkpoint_dir, for_resume=True)
+    if errors:
+        raise ConfigError(f"Cannot resume from incomplete checkpoint {checkpoint_dir}: " + "; ".join(errors))
+
+
+def _wait_for_checkpoint_integrity(
+    config: AppConfig,
+    checkpoint_dir: Path,
+    *,
+    timeout_seconds: float = 120.0,
+    poll_seconds: float = 2.0,
+) -> None:
+    start = time.monotonic()
+    last_errors: list[str] = []
+    while time.monotonic() - start <= timeout_seconds:
+        last_errors = _checkpoint_validation_errors(config, checkpoint_dir, for_resume=False)
+        if not last_errors:
+            return
+        time.sleep(poll_seconds)
+    raise RuntimeError(f"Incomplete checkpoint after save: {checkpoint_dir}: " + "; ".join(last_errors))
 
 
 def _prepare_model(config: AppConfig) -> tuple[Any, Any]:
@@ -584,6 +669,7 @@ def _build_trainer(
         trainer_kwargs["tokenizer"] = processor
 
     trainer = PromptedTrainer(**trainer_kwargs)
+    trainer.add_callback(_CheckpointIntegrityCallback(config))
     trainer.add_callback(_CheckpointRotationCallback(config.training.save_total_limit))
     return trainer
 
@@ -619,6 +705,17 @@ class _CheckpointRotationCallback:
         for checkpoint in checkpoints[:excess]:
             logging.info("Removing old checkpoint due to save_total_limit=%s: %s", self.save_total_limit, checkpoint)
             shutil.rmtree(checkpoint, ignore_errors=True)
+
+
+class _CheckpointIntegrityCallback:
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+
+    def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        if not state.is_world_process_zero:
+            return
+        checkpoint_dir = Path(args.output_dir) / f"checkpoint-{state.global_step}"
+        _wait_for_checkpoint_integrity(self.config, checkpoint_dir)
 
 
 def _log_bundle(bundle: Any) -> None:

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from whisper_finetune.config import AppConfig
 from whisper_finetune.train import _audio_duration_seconds, _filter_example, _resolve_max_label_tokens
+from whisper_finetune.train import _checkpoint_validation_errors
 
 
 def _config() -> AppConfig:
@@ -85,3 +86,32 @@ def test_resolve_max_label_tokens_uses_model_decoder_capacity() -> None:
     _resolve_max_label_tokens(config, model)
 
     assert config.data.max_label_tokens == 444
+
+
+def test_checkpoint_validation_detects_incomplete_deepspeed_checkpoint(tmp_path) -> None:
+    config = _config()
+    config.training.deepspeed_config = "deepspeed/zero2.json"
+    checkpoint = tmp_path / "checkpoint-30000"
+    global_step = checkpoint / "global_step30000"
+    global_step.mkdir(parents=True)
+    (global_step / "bf16_zero_pp_rank_1_mp_rank_00_optim_states.pt").write_bytes(b"")
+
+    errors = _checkpoint_validation_errors(config, checkpoint, for_resume=True)
+
+    assert "missing trainer_state.json" in errors
+    assert "missing model.safetensors or pytorch_model.bin" in errors
+    assert "missing DeepSpeed model state file in global_step30000" in errors
+
+
+def test_checkpoint_validation_accepts_complete_deepspeed_checkpoint(tmp_path) -> None:
+    config = _config()
+    config.training.deepspeed_config = "deepspeed/zero2.json"
+    checkpoint = tmp_path / "checkpoint-30000"
+    global_step = checkpoint / "global_step30000"
+    global_step.mkdir(parents=True)
+    (checkpoint / "trainer_state.json").write_text("{}", encoding="utf-8")
+    (checkpoint / "model.safetensors").write_bytes(b"")
+    (global_step / "mp_rank_00_model_states.pt").write_bytes(b"")
+    (global_step / "bf16_zero_pp_rank_0_mp_rank_00_optim_states.pt").write_bytes(b"")
+
+    assert _checkpoint_validation_errors(config, checkpoint, for_resume=True) == []

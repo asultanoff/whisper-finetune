@@ -639,6 +639,7 @@ class TrainingConfig:
     label_smoothing_factor: float = 0.0
     max_grad_norm: float = 1.0
     deepspeed_config: str | None = None
+    checkpoint_save_mode: str = "full"
 
     def __post_init__(self) -> None:
         numeric_fields = {
@@ -675,6 +676,8 @@ class TrainingConfig:
             raise ConfigError("training.num_train_epochs must be > 0")
         if self.max_steps == 0 or self.max_steps < -1:
             raise ConfigError("training.max_steps must be -1 or a positive integer")
+        if self.checkpoint_save_mode not in {"full", "model_only"}:
+            raise ConfigError("training.checkpoint_save_mode must be one of: full, model_only")
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None) -> "TrainingConfig":
@@ -713,6 +716,7 @@ class TrainingConfig:
             "label_smoothing_factor",
             "max_grad_norm",
             "deepspeed_config",
+            "checkpoint_save_mode",
         }
         _unknown_keys(raw, allowed, "training")
         warmup_ratio = float(raw.get("warmup_ratio", 0.0))
@@ -755,6 +759,7 @@ class TrainingConfig:
             label_smoothing_factor=float(raw.get("label_smoothing_factor", 0.0)),
             max_grad_norm=float(raw.get("max_grad_norm", 1.0)),
             deepspeed_config=raw.get("deepspeed_config"),
+            checkpoint_save_mode=str(raw.get("checkpoint_save_mode", "full")),
         )
 
 

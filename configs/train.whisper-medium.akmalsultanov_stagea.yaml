@@ -1,5 +1,5 @@
 experiment:
-  output_dir: outputs/whisper-medium-akmalsultanov
+  output_dir: outputs/whisper-medium-akmalsultanov_stage_a
   tensorboard_dir: outputs/whisper-medium-akmalsultanov/tensorboard
   seed: 42
   run_name: whisper-medium-akmalsultanov
@@ -332,7 +332,6 @@ data:
       text_column: text
 
 training:
-  resume_from_output_dir: /workspace/whisper-finetune/outputs/whisper-medium-akmalsultanov-20260418-154944-38c994be/checkpoint-30000
   per_device_train_batch_size: 12
   per_device_eval_batch_size: 8
   gradient_accumulation_steps: 2
@@ -364,3 +363,4 @@ training:
   label_smoothing_factor: 0.0
   max_grad_norm: 1.0
   deepspeed_config: deepspeed/zero2.json
+  checkpoint_save_mode: full

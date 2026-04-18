@@ -241,6 +241,27 @@ def test_training_config_accepts_final_eval_flag() -> None:
     assert config.training.final_eval is False
 
 
+def test_training_config_accepts_checkpoint_save_mode() -> None:
+    config = AppConfig.from_dict(
+        {
+            "model": {"name_or_path": "openai/whisper-small"},
+            "data": {
+                "datasets": [
+                    {
+                        "repo_id": "org/dataset",
+                        "train_split": "train",
+                        "audio_column": "audio",
+                        "text_column": "text",
+                    }
+                ]
+            },
+            "training": {"checkpoint_save_mode": "model_only"},
+        }
+    )
+
+    assert config.training.checkpoint_save_mode == "model_only"
+
+
 def test_model_config_accepts_init_from_output_dir_without_base_name() -> None:
     config = AppConfig.from_dict(
         {
@@ -442,6 +463,26 @@ def test_training_config_rejects_unknown_sampling_strategy() -> None:
         )
 
 
+def test_training_config_rejects_unknown_checkpoint_save_mode() -> None:
+    with pytest.raises(ConfigError):
+        AppConfig.from_dict(
+            {
+                "model": {"name_or_path": "openai/whisper-small"},
+                "data": {
+                    "datasets": [
+                        {
+                            "repo_id": "org/dataset",
+                            "train_split": "train",
+                            "audio_column": "audio",
+                            "text_column": "text",
+                        }
+                    ]
+                },
+                "training": {"checkpoint_save_mode": "invalid"},
+            }
+        )
+
+
 def test_training_config_rejects_group_by_length_without_key() -> None:
     with pytest.raises(ConfigError):
         AppConfig.from_dict(
@@ -553,7 +594,12 @@ def test_resolve_experiment_paths_suffixes_external_tensorboard_dir() -> None:
 def test_resolve_resume_from_output_dir_uses_latest_checkpoint_and_disables_unique_paths(tmp_path: Path) -> None:
     output_dir = tmp_path / "previous-run"
     (output_dir / "checkpoint-50").mkdir(parents=True)
-    (output_dir / "checkpoint-100").mkdir(parents=True)
+    checkpoint = output_dir / "checkpoint-100"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "trainer_state.json").write_text("{}", encoding="utf-8")
+    (checkpoint / "model.safetensors").write_bytes(b"")
+    (checkpoint / "optimizer.pt").write_bytes(b"")
+    (checkpoint / "scheduler.pt").write_bytes(b"")
 
     config = AppConfig.from_dict(
         {
