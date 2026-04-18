@@ -366,7 +366,7 @@ training:
   lr_scheduler_type: linear
   logging_steps: 25
   eval_steps: 10
-  save_steps: 1000
+  save_steps: 10
   save_total_limit: 3
   generation_num_beams: 1
   predict_with_generate: true
