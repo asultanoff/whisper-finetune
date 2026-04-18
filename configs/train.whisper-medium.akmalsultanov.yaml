@@ -13,7 +13,7 @@ cache:
 
 hub:
   enabled: false
-  repo_id: akmalsultanov/whisper-medium-akmalsultanov
+  repo_id: akmalsultanov/whisper-medium
   private: true
   token_env_var: HF_TOKEN
   commit_message: Upload final Whisper finetune artifacts
@@ -340,7 +340,7 @@ data:
       language: uz
       train_split: train
       validation_split: test
-      audio_column: audio_path
+      audio_column: audio
       text_column: text
     - repo_id: akmalsultanov/uzbooks_300hr
       alias: uzbooks
