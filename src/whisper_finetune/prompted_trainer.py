@@ -32,6 +32,22 @@ def split_generation_prompt_inputs(inputs: dict[str, Any]) -> tuple[dict[str, An
     return model_inputs, generation_prompt_inputs
 
 
+def _is_deepspeed_zero3_enabled(trainer: Any) -> bool:
+    accelerator = getattr(trainer, "accelerator", None)
+    state = getattr(accelerator, "state", None)
+    plugin = getattr(state, "deepspeed_plugin", None)
+    if plugin is None:
+        return False
+    zero_stage = getattr(plugin, "zero_stage", None)
+    if zero_stage is not None:
+        return int(zero_stage) == 3
+    hf_ds_config = getattr(plugin, "hf_ds_config", None)
+    config = getattr(hf_ds_config, "config", None)
+    if isinstance(config, dict):
+        return int(config.get("zero_optimization", {}).get("stage", 0)) == 3
+    return False
+
+
 class WhisperPromptedSeq2SeqTrainer:
     """Mixin-like wrapper around Seq2SeqTrainer semantics for generation prompt inputs."""
 
@@ -63,7 +79,6 @@ class WhisperPromptedSeq2SeqTrainer:
                     )
 
                 from torch.distributed.fsdp import FullyShardedDataParallel
-                from transformers.trainer import is_deepspeed_zero3_enabled, is_fsdp_managed_module
 
                 has_labels = "labels" in inputs
                 inputs = self._prepare_inputs(inputs)
@@ -76,7 +91,7 @@ class WhisperPromptedSeq2SeqTrainer:
                 if "max_length" in gen_kwargs and gen_kwargs["max_length"] is None:
                     gen_kwargs.pop("max_length")
 
-                default_synced_gpus = is_deepspeed_zero3_enabled() or is_fsdp_managed_module(self.model)
+                default_synced_gpus = _is_deepspeed_zero3_enabled(self) or isinstance(self.model, FullyShardedDataParallel)
                 gen_kwargs["synced_gpus"] = gen_kwargs.get("synced_gpus", default_synced_gpus)
 
                 generation_inputs = model_inputs.copy()

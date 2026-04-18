@@ -332,8 +332,8 @@ data:
       text_column: text
 
 training:
-  per_device_train_batch_size: 16
-  per_device_eval_batch_size: 16
+  per_device_train_batch_size: 12
+  per_device_eval_batch_size: 8
   gradient_accumulation_steps: 2
   learning_rate: 1.0e-4
   warmup_ratio: 0.15
@@ -341,8 +341,8 @@ training:
   max_steps: -1
   lr_scheduler_type: linear
   logging_steps: 25
-  eval_steps: 750
-  save_steps: 750
+  eval_steps: 1500
+  save_steps: 1500
   save_total_limit: 3
   generation_num_beams: 1
   predict_with_generate: true
