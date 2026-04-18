@@ -137,6 +137,9 @@ model:
   remove_encoder_input_length_restriction: true
 ```
 
+`model.language` is an optional default. If a dataset sets its own
+`data.datasets[].language`, that per-dataset language is used instead.
+
 `remove_encoder_input_length_restriction: true` enables dynamic encoder lengths
 for clips up to 30 seconds. Mel features are still computed on the fly, and
 batch padding is masked correctly in encoder self-attention and decoder
@@ -160,12 +163,14 @@ data:
     - repo_id: mozilla-foundation/common_voice_17_0
       config_name: en
       alias: common_voice_en
+      language: en
       train_split: train
       validation_split: validation
       audio_column: audio
       text_column: sentence
     - repo_id: speechcolab/gigaspeech
       alias: gigaspeech_ratio_val
+      language: en
       train_split: train
       validation_from_train_ratio: 0.02
       validation_from_train_seed: 42
@@ -174,6 +179,14 @@ data:
 ```
 
 `validation_split` and `validation_from_train_ratio` are mutually exclusive.
+
+Each dataset can set `language`. The collator uses that to build the correct
+Whisper decoder prompt per example:
+
+- `<|startoftranscript|><|language|><|task|><|notimestamps|>` when language is set
+- `<|startoftranscript|><|task|><|notimestamps|>` when language is not set
+
+These prompt tokens are used in both training labels and eval generation.
 
 Optional waveform corruption is configured under `data.audio_augmentation` and
 is applied in the collator before Whisper feature extraction:

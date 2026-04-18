@@ -79,7 +79,13 @@ def _load_hf_split(dataset_config: DatasetConfig, split_name: str, default_cache
     return datasets.load_dataset(**kwargs)
 
 
-def _canonicalize_columns(dataset: Any, dataset_config: DatasetConfig, split_name: str, sampling_rate: int) -> Any:
+def _canonicalize_columns(
+    dataset: Any,
+    dataset_config: DatasetConfig,
+    split_name: str,
+    sampling_rate: int,
+    prompt_language: str | None,
+) -> Any:
     datasets = _datasets_module()
 
     missing = [
@@ -101,6 +107,7 @@ def _canonicalize_columns(dataset: Any, dataset_config: DatasetConfig, split_nam
     dataset = dataset.add_column("__source_dataset", [dataset_config.source_name] * size)
     dataset = dataset.add_column("__source_repo_id", [dataset_config.repo_id] * size)
     dataset = dataset.add_column("__source_split", [split_name] * size)
+    dataset = dataset.add_column("__prompt_language", [prompt_language] * size)
     dataset = dataset.add_column(
         "__sample_id",
         [f"{dataset_config.source_name}:{split_name}:{index}" for index in range(size)],
@@ -186,6 +193,7 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
             default_cache_dir=config.cache.dataset_dir,
         )
         train_split, eval_split = split_train_for_validation(train_split, dataset_config)
+        prompt_language = dataset_config.language or config.model.language
 
         if eval_split is None and dataset_config.validation_split:
             eval_split = _load_hf_split(
@@ -199,6 +207,7 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
             dataset_config=dataset_config,
             split_name=dataset_config.train_split,
             sampling_rate=config.data.audio_sampling_rate,
+            prompt_language=prompt_language,
         )
         train_split = _select_limit(train_split, dataset_config.max_train_samples)
 
@@ -214,6 +223,7 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
                 dataset_config=dataset_config,
                 split_name=eval_name,
                 sampling_rate=config.data.audio_sampling_rate,
+                prompt_language=prompt_language,
             )
             eval_split = _select_limit(eval_split, dataset_config.max_validation_samples)
             eval_parts.append(eval_split)

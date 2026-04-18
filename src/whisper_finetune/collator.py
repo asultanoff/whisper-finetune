@@ -15,9 +15,25 @@ from .data import normalize_text
 class DataCollatorSpeechSeq2SeqWithPadding:
     processor: Any
     decoder_start_token_id: int
+    task: str
     text_normalization: TextNormalizationConfig
     remove_encoder_input_length_restriction: bool = False
     augmenter: WaveformAugmenter | None = None
+
+    def _prompt_language(self, feature: dict[str, Any]) -> str | None:
+        language = feature.get("__prompt_language")
+        if language is None:
+            return None
+        normalized = str(language).strip()
+        return normalized or None
+
+    def _decoder_prompt_ids(self, language: str | None) -> list[int]:
+        prompt_ids = [self.decoder_start_token_id]
+        prompt_ids.extend(
+            token_id
+            for _, token_id in self.processor.get_decoder_prompt_ids(language=language, task=self.task)
+        )
+        return prompt_ids
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         if not features:
@@ -57,14 +73,25 @@ class DataCollatorSpeechSeq2SeqWithPadding:
             return_tensors="pt",
         )
 
-        label_features = [
-            {
-                "input_ids": self.processor.tokenizer(
-                    normalize_text(feature["text"], self.text_normalization)
-                ).input_ids
-            }
-            for feature in features
-        ]
+        prompt_features = []
+        label_features = []
+        eos_token_id = self.processor.tokenizer.eos_token_id
+        for feature in features:
+            prompt_ids = self._decoder_prompt_ids(self._prompt_language(feature))
+            prompt_features.append({"input_ids": prompt_ids})
+            text_ids = self.processor.tokenizer(
+                normalize_text(feature["text"], self.text_normalization),
+                add_special_tokens=False,
+            ).input_ids
+            label_ids = list(prompt_ids) + list(text_ids)
+            if eos_token_id is not None:
+                label_ids.append(eos_token_id)
+            label_features.append({"input_ids": label_ids})
+
+        generation_prompts = self.processor.tokenizer.pad(prompt_features, return_tensors="pt")
+        batch["generation_decoder_input_ids"] = generation_prompts["input_ids"]
+        batch["generation_decoder_attention_mask"] = generation_prompts["attention_mask"]
+
         labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
         labels = labels_batch["input_ids"].masked_fill(labels_batch["attention_mask"].ne(1), -100)
 

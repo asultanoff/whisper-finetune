@@ -41,6 +41,7 @@ def test_dataset_config_accepts_ratio_validation() -> None:
                 "datasets": [
                     {
                         "repo_id": "org/dataset",
+                        "language": "uz",
                         "train_split": "train",
                         "validation_from_train_ratio": 0.1,
                         "audio_column": "audio",
@@ -52,6 +53,7 @@ def test_dataset_config_accepts_ratio_validation() -> None:
     )
 
     dataset_config = config.data.datasets[0]
+    assert dataset_config.language == "uz"
     assert dataset_config.validation_split is None
     assert dataset_config.validation_from_train_ratio == 0.1
 

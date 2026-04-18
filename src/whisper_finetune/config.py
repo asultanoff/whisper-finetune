@@ -351,6 +351,7 @@ class DatasetConfig:
     repo_id: str
     config_name: str | None = None
     alias: str | None = None
+    language: str | None = None
     revision: str | None = None
     cache_dir: str | None = None
     trust_remote_code: bool = False
@@ -401,6 +402,7 @@ class DatasetConfig:
             "repo_id",
             "config_name",
             "alias",
+            "language",
             "revision",
             "cache_dir",
             "trust_remote_code",
@@ -419,6 +421,7 @@ class DatasetConfig:
             repo_id=str(raw.get("repo_id", "")),
             config_name=raw.get("config_name"),
             alias=raw.get("alias"),
+            language=(None if raw.get("language") is None else str(raw.get("language"))),
             revision=raw.get("revision"),
             cache_dir=raw.get("cache_dir"),
             trust_remote_code=bool(raw.get("trust_remote_code", False)),

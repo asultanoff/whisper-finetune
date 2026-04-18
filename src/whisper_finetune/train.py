@@ -18,6 +18,7 @@ from .data import LENGTH_COLUMN_NAMES, add_length_grouping_column, load_dataset_
 from .hub import upload_final_artifacts_to_hub
 from .metrics import word_error_rate
 from .patches import enable_whisper_encoder_input_length_patch
+from .prompted_trainer import WhisperPromptedSeq2SeqTrainer
 
 
 def parse_args() -> argparse.Namespace:
@@ -204,9 +205,7 @@ def _prepare_model(config: AppConfig) -> tuple[Any, Any]:
         **from_pretrained_kwargs,
     )
 
-    if config.model.language:
-        processor.tokenizer.set_prefix_tokens(language=config.model.language, task=config.model.task)
-        model.generation_config.language = config.model.language
+    model.generation_config.language = None
     model.generation_config.task = config.model.task
     model.generation_config.forced_decoder_ids = None
 
@@ -323,10 +322,12 @@ def _build_trainer(
     training_args: Any,
 ) -> Any:
     Seq2SeqTrainer, _, _, _, _ = _trainer_dependencies()
+    PromptedTrainer = WhisperPromptedSeq2SeqTrainer.bind(Seq2SeqTrainer)
     augmenter = build_waveform_augmenter(config.data.audio_augmentation)
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
+        task=config.model.task,
         text_normalization=config.data.text_normalization,
         remove_encoder_input_length_restriction=config.model.remove_encoder_input_length_restriction,
         augmenter=augmenter,
@@ -340,13 +341,13 @@ def _build_trainer(
         "compute_metrics": _build_compute_metrics(processor, config) if eval_dataset is not None else None,
     }
 
-    signature = inspect.signature(Seq2SeqTrainer.__init__)
+    signature = inspect.signature(PromptedTrainer.__init__)
     if "processing_class" in signature.parameters:
         trainer_kwargs["processing_class"] = processor
     elif "tokenizer" in signature.parameters:
         trainer_kwargs["tokenizer"] = processor
 
-    return Seq2SeqTrainer(**trainer_kwargs)
+    return PromptedTrainer(**trainer_kwargs)
 
 
 def _log_bundle(bundle: Any) -> None:

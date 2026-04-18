@@ -87,6 +87,7 @@ data:
   datasets:
     - repo_id: akmalsultanov/lb_tg_raw_4k
       alias: lb_tg_raw_4k
+      language: uz
       train_split: train
       validation_from_train_ratio: 0.05
       validation_from_train_seed: 42
@@ -94,6 +95,7 @@ data:
       text_column: transcription
     - repo_id: akmalsultanov/lb_xorazm
       alias: lb_xorazm
+      language: uz
       train_split: train
       validation_from_train_ratio: 0.05
       validation_from_train_seed: 42
@@ -101,6 +103,7 @@ data:
       text_column: transcription
     - repo_id: akmalsultanov/sarf_full
       alias: sarf_full
+      language: uz
       train_split: train
       validation_from_train_ratio: 0.05
       validation_from_train_seed: 42
@@ -108,6 +111,7 @@ data:
       text_column: transcription
     - repo_id: akmalsultanov/odamiylik_mulki
       alias: odamiylik_mulki
+      language: uz
       train_split: train
       validation_split: test
       audio_column: audio_path

@@ -12,7 +12,6 @@ cache:
 
 model:
   name_or_path: openai/whisper-small
-  language: en
   task: transcribe
   freeze_encoder: false
   generation_max_length: 225
@@ -31,12 +30,14 @@ data:
     - repo_id: mozilla-foundation/common_voice_17_0
       config_name: en
       alias: common_voice_en
+      language: en
       train_split: train
       validation_split: validation
       audio_column: audio
       text_column: sentence
     - repo_id: speechcolab/gigaspeech
       alias: gigaspeech_ratio_val
+      language: en
       train_split: train
       validation_from_train_ratio: 0.02
       validation_from_train_seed: 42

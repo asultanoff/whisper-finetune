@@ -46,9 +46,13 @@ class FakeFeatureExtractor:
 
 class FakeTokenizer:
     pad_token_id = 0
+    eos_token_id = 99
 
-    def __call__(self, text):
-        return SimpleNamespace(input_ids=[1, len(text)])
+    def __call__(self, text, add_special_tokens=True):
+        ids = [len(str(text))]
+        if add_special_tokens:
+            return SimpleNamespace(input_ids=[1, 2] + ids + [self.eos_token_id])
+        return SimpleNamespace(input_ids=ids)
 
     def pad(self, label_features, return_tensors):
         max_length = max(len(item["input_ids"]) for item in label_features)
@@ -65,12 +69,30 @@ class FakeTokenizer:
         }
 
 
+class FakeProcessor:
+    def __init__(self, feature_extractor, tokenizer):
+        self.feature_extractor = feature_extractor
+        self.tokenizer = tokenizer
+
+    def get_decoder_prompt_ids(self, language=None, task=None):
+        prompt = []
+        if language == "uz":
+            prompt.append((1, 11))
+        elif language == "en":
+            prompt.append((1, 12))
+        if task == "transcribe":
+            prompt.append((len(prompt) + 1, 21))
+        prompt.append((len(prompt) + 1, 31))
+        return prompt
+
+
 def test_collator_computes_features_on_the_fly_with_longest_padding() -> None:
     feature_extractor = FakeFeatureExtractor()
-    processor = SimpleNamespace(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
+    processor = FakeProcessor(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
     collator = DataCollatorSpeechSeq2SeqWithPadding(
         processor=processor,
         decoder_start_token_id=1,
+        task="transcribe",
         text_normalization=TextNormalizationConfig(lowercase=True),
         remove_encoder_input_length_restriction=True,
     )
@@ -78,24 +100,40 @@ def test_collator_computes_features_on_the_fly_with_longest_padding() -> None:
     batch = collator(
         [
             {"audio": {"array": [0.0] * 16000, "sampling_rate": 16000}, "text": " Hello "},
-            {"audio": {"array": [0.0] * 32000, "sampling_rate": 16000}, "text": "WORLD"},
+            {
+                "audio": {"array": [0.0] * 32000, "sampling_rate": 16000},
+                "text": "WORLD",
+                "__prompt_language": "uz",
+            },
         ]
     )
 
     assert batch["input_features"].shape == (2, 80, 200)
     assert batch["attention_mask"].shape == (2, 200)
     assert batch["attention_mask"].sum(dim=-1).tolist() == [100, 200]
-    assert batch["labels"].tolist() == [[5], [5]]
+    assert batch["labels"].tolist() == [
+        [21, 31, 5, 99, -100],
+        [11, 21, 31, 5, 99],
+    ]
+    assert batch["generation_decoder_input_ids"].tolist() == [
+        [1, 21, 31, 0],
+        [1, 11, 21, 31],
+    ]
+    assert batch["generation_decoder_attention_mask"].tolist() == [
+        [1, 1, 1, 0],
+        [1, 1, 1, 1],
+    ]
     assert feature_extractor.calls[-1]["padding"] == "longest"
     assert feature_extractor.calls[-1]["truncation"] is False
 
 
 def test_collator_uses_max_length_padding_when_encoder_patch_is_disabled() -> None:
     feature_extractor = FakeFeatureExtractor()
-    processor = SimpleNamespace(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
+    processor = FakeProcessor(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
     collator = DataCollatorSpeechSeq2SeqWithPadding(
         processor=processor,
         decoder_start_token_id=1,
+        task="transcribe",
         text_normalization=TextNormalizationConfig(),
         remove_encoder_input_length_restriction=False,
     )
@@ -140,10 +178,11 @@ def test_collator_applies_audio_augmentation_before_feature_extraction() -> None
 
     feature_extractor = FakeFeatureExtractor()
     augmenter = FakeAugmenter()
-    processor = SimpleNamespace(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
+    processor = FakeProcessor(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
     collator = DataCollatorSpeechSeq2SeqWithPadding(
         processor=processor,
         decoder_start_token_id=1,
+        task="transcribe",
         text_normalization=TextNormalizationConfig(),
         augmenter=augmenter,
     )
