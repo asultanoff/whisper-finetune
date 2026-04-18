@@ -270,7 +270,21 @@ def _configure_single_process_deepspeed_env(config: AppConfig) -> None:
     logging.info("Configured single-process DeepSpeed environment variables for this run.")
 
 
-def _audio_duration_seconds(audio: dict[str, Any]) -> float:
+def _metadata_value(metadata: Any, key: str) -> Any:
+    if metadata is None:
+        return None
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    return getattr(metadata, key, None)
+
+
+def _audio_duration_seconds(audio: Any) -> float:
+    metadata = audio.get("metadata") if isinstance(audio, dict) else getattr(audio, "metadata", None)
+    for key in ("duration_seconds_from_header", "duration_seconds"):
+        value = _metadata_value(metadata, key)
+        if value is not None:
+            return float(value)
+
     return len(audio["array"]) / float(audio["sampling_rate"])
 
 
