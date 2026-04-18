@@ -42,6 +42,11 @@ data:
     train_only: true
     mode: deterministic_per_sample
     datasets:
+      usc_cleaned:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
       lb_tg_raw_4k:
         enabled: true
         profile: phone_like
