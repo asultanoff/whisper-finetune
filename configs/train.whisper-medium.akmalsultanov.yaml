@@ -346,7 +346,6 @@ data:
       alias: uzbooks
       language: uz
       train_split: train
-      validation_split: test
       audio_column: audio
       text_column: source_sentence
     - repo_id: akmalsultanov/conv_stt
