@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from whisper_finetune.config import DatasetConfig, TextNormalizationConfig
 from whisper_finetune.data import (
+    _canonicalize_columns,
     _shuffle_dataset,
     add_length_grouping_column,
     normalize_text,
@@ -51,6 +52,72 @@ class FakeDataset:
         values = list(self.values)
         random.Random(seed).shuffle(values)
         return FakeDataset(values)
+
+    def rename_column(self, original_column_name, new_column_name):
+        if new_column_name in self.column_names:
+            raise ValueError(f"New column name {new_column_name} already in dataset")
+        return FakeDataset(
+            [
+                {
+                    (new_column_name if key == original_column_name else key): value
+                    for key, value in row.items()
+                }
+                for row in self.values
+            ]
+        )
+
+    def remove_columns(self, column_names):
+        columns = set(column_names)
+        return FakeDataset(
+            [
+                {key: value for key, value in row.items() if key not in columns}
+                for row in self.values
+            ]
+        )
+
+    def add_column(self, name, column):
+        return FakeDataset(
+            [
+                {**row, name: column[index]}
+                for index, row in enumerate(self.values)
+            ]
+        )
+
+    def cast_column(self, column, feature):
+        return self
+
+
+def test_canonicalize_columns_allows_configured_text_to_replace_existing_text_column() -> None:
+    dataset = FakeDataset(
+        [
+            {
+                "audio": {"array": [0.0], "sampling_rate": 16000},
+                "text": "wrong transcript",
+                "source_sentence": "correct transcript",
+                "aligned_sentence": "metadata",
+            }
+        ]
+    )
+    config = DatasetConfig(
+        repo_id="org/uzbooks",
+        alias="uzbooks",
+        train_split="train",
+        audio_column="audio",
+        text_column="source_sentence",
+    )
+
+    canonicalized = _canonicalize_columns(
+        dataset,
+        dataset_config=config,
+        split_name="train",
+        sampling_rate=16000,
+        prompt_language="uz",
+    )
+
+    assert canonicalized.values[0]["text"] == "correct transcript"
+    assert "source_sentence" not in canonicalized.column_names
+    assert canonicalized.values[0]["__source_dataset"] == "uzbooks"
+    assert canonicalized.values[0]["__prompt_language"] == "uz"
 
 
 def test_split_train_for_validation_uses_ratio() -> None:
