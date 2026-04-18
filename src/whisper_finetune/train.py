@@ -82,6 +82,8 @@ def _build_training_arguments(config: AppConfig, has_eval_dataset: bool) -> Any:
         "logging_steps": config.training.logging_steps,
         "save_steps": config.training.save_steps,
         "save_total_limit": config.training.save_total_limit,
+        "save_on_each_node": False,
+        "save_safetensors": True,
         "predict_with_generate": config.training.predict_with_generate,
         "generation_max_length": config.model.generation_max_length,
         "generation_num_beams": config.training.generation_num_beams,
@@ -143,6 +145,26 @@ def _resolve_tensorboard_dir_for_output(base_output_dir: Path, base_tensorboard_
     return resolved_output_dir / relative
 
 
+def _shared_run_suffix(config: AppConfig) -> str:
+    if _distributed_world_size() <= 1:
+        return _build_run_suffix()
+
+    base_output_dir = Path(config.experiment.output_dir)
+    suffix_file = base_output_dir.parent / f".{base_output_dir.name}.run_suffix"
+    suffix_file.parent.mkdir(parents=True, exist_ok=True)
+    if _is_rank_zero():
+        suffix = _build_run_suffix()
+        suffix_file.write_text(suffix, encoding="utf-8")
+        return suffix
+
+    start = time.monotonic()
+    while not suffix_file.exists():
+        if time.monotonic() - start > 600:
+            raise TimeoutError(f"Timed out waiting for shared run suffix: {suffix_file}")
+        time.sleep(1.0)
+    return suffix_file.read_text(encoding="utf-8").strip()
+
+
 def _resolve_experiment_paths(
     config: AppConfig,
     *,
@@ -156,7 +178,7 @@ def _resolve_experiment_paths(
     if not config.experiment.unique_output_dir:
         return
 
-    suffix = _build_run_suffix(now=now, token=token)
+    suffix = _build_run_suffix(now=now, token=token) if now is not None or token is not None else _shared_run_suffix(config)
     base_tensorboard_dir = Path(config.experiment.tensorboard_dir)
     resolved_output_dir = _with_suffix(base_output_dir, suffix)
 
@@ -611,13 +633,14 @@ def run_training(config: AppConfig, *, source_config_path: str | None = None) ->
     )
     train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     trainer.save_model()
-    processor.save_pretrained(output_dir)
+    if trainer.is_world_process_zero():
+        processor.save_pretrained(output_dir)
     trainer.log_metrics("train", train_result.metrics)
     trainer.save_metrics("train", train_result.metrics)
     trainer.save_state()
 
     eval_metrics = None
-    if eval_dataset is not None:
+    if eval_dataset is not None and config.training.final_eval:
         eval_metrics = trainer.evaluate(eval_dataset=eval_dataset, metric_key_prefix="eval")
         trainer.log_metrics("eval", eval_metrics)
         trainer.save_metrics("eval", eval_metrics)

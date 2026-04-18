@@ -337,12 +337,12 @@ training:
   gradient_accumulation_steps: 2
   learning_rate: 1.0e-4
   warmup_ratio: 0.15
-  num_train_epochs: 5
-  max_steps: 15
+  num_train_epochs: 6
+  max_steps: -1
   lr_scheduler_type: linear
   logging_steps: 25
-  eval_steps: 10
-  save_steps: 10
+  eval_steps: 15000
+  save_steps: 5000
   save_total_limit: 3
   generation_num_beams: 1
   predict_with_generate: true
@@ -354,7 +354,8 @@ training:
   dataloader_num_workers: 16
   train_sampling_strategy: random
   length_grouping_key: null
-  load_best_model_at_end: true
+  load_best_model_at_end: false
+  final_eval: false
   metric_for_best_model: wer
   greater_is_better: false
   optim: adamw_torch

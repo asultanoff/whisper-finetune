@@ -220,6 +220,27 @@ def test_training_config_accepts_random_sampling_strategy() -> None:
     assert config.training.train_sampling_strategy == "random"
 
 
+def test_training_config_accepts_final_eval_flag() -> None:
+    config = AppConfig.from_dict(
+        {
+            "model": {"name_or_path": "openai/whisper-small"},
+            "data": {
+                "datasets": [
+                    {
+                        "repo_id": "org/dataset",
+                        "train_split": "train",
+                        "audio_column": "audio",
+                        "text_column": "text",
+                    }
+                ]
+            },
+            "training": {"final_eval": False},
+        }
+    )
+
+    assert config.training.final_eval is False
+
+
 def test_model_config_accepts_init_from_output_dir_without_base_name() -> None:
     config = AppConfig.from_dict(
         {

@@ -631,6 +631,7 @@ class TrainingConfig:
     length_grouping_key: str | None = None
     resume_from_output_dir: str | None = None
     load_best_model_at_end: bool = True
+    final_eval: bool = True
     metric_for_best_model: str = "wer"
     greater_is_better: bool = False
     optim: str = "adamw_torch"
@@ -704,6 +705,7 @@ class TrainingConfig:
             "length_grouping_key",
             "resume_from_output_dir",
             "load_best_model_at_end",
+            "final_eval",
             "metric_for_best_model",
             "greater_is_better",
             "optim",
@@ -745,6 +747,7 @@ class TrainingConfig:
             length_grouping_key=raw.get("length_grouping_key"),
             resume_from_output_dir=raw.get("resume_from_output_dir"),
             load_best_model_at_end=bool(raw.get("load_best_model_at_end", True)),
+            final_eval=bool(raw.get("final_eval", True)),
             metric_for_best_model=str(raw.get("metric_for_best_model", "wer")),
             greater_is_better=bool(raw.get("greater_is_better", False)),
             optim=str(raw.get("optim", "adamw_torch")),
