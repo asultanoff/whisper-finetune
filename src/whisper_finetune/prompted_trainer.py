@@ -8,19 +8,27 @@ import torch
 
 GENERATION_DECODER_INPUT_IDS_KEY = "generation_decoder_input_ids"
 GENERATION_DECODER_ATTENTION_MASK_KEY = "generation_decoder_attention_mask"
+GENERATION_LANGUAGE_KEY = "generation_language"
 
 
 def split_generation_prompt_inputs(inputs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     model_inputs = {
         key: value
         for key, value in inputs.items()
-        if key not in {GENERATION_DECODER_INPUT_IDS_KEY, GENERATION_DECODER_ATTENTION_MASK_KEY}
+        if key
+        not in {
+            GENERATION_DECODER_INPUT_IDS_KEY,
+            GENERATION_DECODER_ATTENTION_MASK_KEY,
+            GENERATION_LANGUAGE_KEY,
+        }
     }
     generation_prompt_inputs = {}
     if GENERATION_DECODER_INPUT_IDS_KEY in inputs:
         generation_prompt_inputs["decoder_input_ids"] = inputs[GENERATION_DECODER_INPUT_IDS_KEY]
     if GENERATION_DECODER_ATTENTION_MASK_KEY in inputs:
         generation_prompt_inputs["decoder_attention_mask"] = inputs[GENERATION_DECODER_ATTENTION_MASK_KEY]
+    if GENERATION_LANGUAGE_KEY in inputs:
+        generation_prompt_inputs["language"] = inputs[GENERATION_LANGUAGE_KEY]
     return model_inputs, generation_prompt_inputs
 
 

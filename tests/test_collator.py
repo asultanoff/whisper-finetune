@@ -123,8 +123,37 @@ def test_collator_computes_features_on_the_fly_with_longest_padding() -> None:
         [1, 1, 1, 0],
         [1, 1, 1, 1],
     ]
+    assert "generation_language" not in batch
     assert feature_extractor.calls[-1]["padding"] == "longest"
     assert feature_extractor.calls[-1]["truncation"] is False
+
+
+def test_collator_passes_generation_languages_when_all_examples_have_language() -> None:
+    feature_extractor = FakeFeatureExtractor()
+    processor = FakeProcessor(feature_extractor=feature_extractor, tokenizer=FakeTokenizer())
+    collator = DataCollatorSpeechSeq2SeqWithPadding(
+        processor=processor,
+        decoder_start_token_id=1,
+        task="transcribe",
+        text_normalization=TextNormalizationConfig(),
+    )
+
+    batch = collator(
+        [
+            {
+                "audio": {"array": [0.0] * 16000, "sampling_rate": 16000},
+                "text": "a",
+                "__prompt_language": "uz",
+            },
+            {
+                "audio": {"array": [0.0] * 16000, "sampling_rate": 16000},
+                "text": "b",
+                "__prompt_language": "en",
+            },
+        ]
+    )
+
+    assert batch["generation_language"] == ["uz", "en"]
 
 
 def test_collator_uses_max_length_padding_when_encoder_patch_is_disabled() -> None:

@@ -74,10 +74,13 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         )
 
         prompt_features = []
+        prompt_languages = []
         label_features = []
         eos_token_id = self.processor.tokenizer.eos_token_id
         for feature in features:
-            prompt_ids = self._decoder_prompt_ids(self._prompt_language(feature))
+            prompt_language = self._prompt_language(feature)
+            prompt_languages.append(prompt_language)
+            prompt_ids = self._decoder_prompt_ids(prompt_language)
             prompt_features.append({"input_ids": prompt_ids})
             text_ids = self.processor.tokenizer(
                 normalize_text(feature["text"], self.text_normalization),
@@ -91,6 +94,8 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         generation_prompts = self.processor.tokenizer.pad(prompt_features, return_tensors="pt")
         batch["generation_decoder_input_ids"] = generation_prompts["input_ids"]
         batch["generation_decoder_attention_mask"] = generation_prompts["attention_mask"]
+        if all(language is not None for language in prompt_languages):
+            batch["generation_language"] = prompt_languages
 
         labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
         labels = labels_batch["input_ids"].masked_fill(labels_batch["attention_mask"].ne(1), -100)

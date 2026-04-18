@@ -1,8 +1,8 @@
 experiment:
-  output_dir: outputs/whisper-small-akmalsultanov
-  tensorboard_dir: outputs/whisper-small-akmalsultanov/tensorboard
+  output_dir: outputs/whisper-medium-akmalsultanov
+  tensorboard_dir: outputs/whisper-medium-akmalsultanov/tensorboard
   seed: 42
-  run_name: islomov/rubaistt_v2_medium
+  run_name: whisper-medium-akmalsultanov
   unique_output_dir: true
   save_config_snapshot: true
 
@@ -21,7 +21,7 @@ hub:
   export_subdir: hf-export
 
 model:
-  name_or_path: openai/whisper-small
+  name_or_path: islomov/rubaistt_v2_medium
   task: transcribe
   freeze_encoder: false
   generation_max_length: 225
@@ -58,6 +58,106 @@ data:
         splits: [train]
         apply_p: 0.8
       odamiylik_mulki:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      usc_cleaned:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      uzvoice:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      commonvoice:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      usta_va_margarita:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      dahshat:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      ikki_eshik_orasi:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      negr_bolasi:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      dumli_odamlar:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      jonifigron:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      besh:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      kassandra_tamgasi:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      mahalla:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      ojar:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      molhona:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      yulduzlar:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      bahor_qaytmaydi:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      champo:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      sheva_small:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      uzbooks:
+        enabled: true
+        profile: phone_like
+        splits: [train]
+        apply_p: 0.8
+      conv:
         enabled: true
         profile: phone_like
         splits: [train]
