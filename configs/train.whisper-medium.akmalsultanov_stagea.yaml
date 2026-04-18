@@ -352,8 +352,8 @@ training:
   bf16: true
   gradient_checkpointing: false
   dataloader_num_workers: 16
-  train_sampling_strategy: group_by_length
-  length_grouping_key: text
+  train_sampling_strategy: random
+  length_grouping_key: null
   load_best_model_at_end: true
   metric_for_best_model: wer
   greater_is_better: false
