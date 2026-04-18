@@ -14,7 +14,14 @@ from dotenv import load_dotenv
 from .augmentation import build_waveform_augmenter
 from .collator import DataCollatorSpeechSeq2SeqWithPadding
 from .config import AppConfig, load_config, save_config_artifacts
-from .data import LENGTH_COLUMN_NAMES, add_length_grouping_column, load_dataset_bundle, normalize_text
+from .data import (
+    LENGTH_COLUMN_NAMES,
+    _concat_or_single,
+    _shuffle_dataset,
+    add_length_grouping_column,
+    load_dataset_bundle,
+    normalize_text,
+)
 from .hub import upload_final_artifacts_to_hub
 from .metrics import word_error_rate
 from .patches import enable_whisper_encoder_input_length_patch
@@ -296,6 +303,27 @@ def _prepare_split(dataset: Any | None, config: AppConfig, split_name: str, proc
     )
 
 
+def _prepare_split_parts(
+    parts: list[Any],
+    config: AppConfig,
+    split_name: str,
+    processor: Any,
+    *,
+    shuffle: bool,
+) -> Any | None:
+    prepared_parts = []
+    total_parts = len(parts)
+    for index, part in enumerate(parts, start=1):
+        prepared = _prepare_split(part, config, f"{split_name} part {index}/{total_parts}", processor)
+        if prepared is not None:
+            prepared_parts.append(prepared)
+
+    dataset = _concat_or_single(prepared_parts)
+    if shuffle:
+        dataset = _shuffle_dataset(dataset, seed=config.experiment.seed)
+    return dataset
+
+
 def _build_compute_metrics(processor: Any, config: AppConfig):
     def compute_metrics(prediction_output: Any) -> dict[str, float]:
         prediction_ids = prediction_output.predictions
@@ -383,8 +411,8 @@ def run_training(config: AppConfig, *, source_config_path: str | None = None) ->
     bundle = load_dataset_bundle(config)
     _log_bundle(bundle)
 
-    train_dataset = _prepare_split(bundle.train_dataset, config, "train", processor)
-    eval_dataset = _prepare_split(bundle.eval_dataset, config, "eval", processor)
+    train_dataset = _prepare_split_parts(bundle.train_parts, config, "train", processor, shuffle=True)
+    eval_dataset = _prepare_split_parts(bundle.eval_parts, config, "eval", processor, shuffle=False)
 
     training_args = _build_training_arguments(config, has_eval_dataset=eval_dataset is not None)
     trainer = _build_trainer(

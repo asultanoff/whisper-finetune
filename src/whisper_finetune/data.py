@@ -20,8 +20,10 @@ class DatasetSummary:
 
 @dataclass(slots=True)
 class DatasetBundle:
-    train_dataset: Any
+    train_dataset: Any | None
     eval_dataset: Any | None
+    train_parts: list[Any]
+    eval_parts: list[Any]
     summaries: list[DatasetSummary]
 
 
@@ -282,6 +284,10 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
             )
         )
 
-    train_dataset = _shuffle_dataset(_concat_or_single(train_parts), seed=config.experiment.seed)
-    eval_dataset = _concat_or_single(eval_parts)
-    return DatasetBundle(train_dataset=train_dataset, eval_dataset=eval_dataset, summaries=summaries)
+    return DatasetBundle(
+        train_dataset=None,
+        eval_dataset=None,
+        train_parts=train_parts,
+        eval_parts=eval_parts,
+        summaries=summaries,
+    )
