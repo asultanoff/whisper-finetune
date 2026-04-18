@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from whisper_finetune.config import AppConfig
-from whisper_finetune.train import _audio_duration_seconds, _filter_example, _resolve_max_label_tokens
+from whisper_finetune.train import _CheckpointIntegrityCallback, _audio_duration_seconds, _filter_example, _resolve_max_label_tokens
 from whisper_finetune.train import _checkpoint_validation_errors
 
 
@@ -115,3 +115,9 @@ def test_checkpoint_validation_accepts_complete_deepspeed_checkpoint(tmp_path) -
     (global_step / "bf16_zero_pp_rank_0_mp_rank_00_optim_states.pt").write_bytes(b"")
 
     assert _checkpoint_validation_errors(config, checkpoint, for_resume=True) == []
+
+
+def test_checkpoint_integrity_callback_has_noop_train_begin_hook() -> None:
+    callback = _CheckpointIntegrityCallback(_config())
+
+    assert callback.on_train_begin(None, None, None) is None

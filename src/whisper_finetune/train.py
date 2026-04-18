@@ -689,7 +689,18 @@ def _sorted_checkpoint_dirs(output_dir: str | Path) -> list[Path]:
     )
 
 
-class _CheckpointRotationCallback:
+def _noop_callback_event(*args: Any, **kwargs: Any) -> None:
+    return None
+
+
+class _TrainerCallbackCompat:
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("on_"):
+            return _noop_callback_event
+        raise AttributeError(name)
+
+
+class _CheckpointRotationCallback(_TrainerCallbackCompat):
     def __init__(self, save_total_limit: int) -> None:
         self.save_total_limit = save_total_limit
 
@@ -707,7 +718,7 @@ class _CheckpointRotationCallback:
             shutil.rmtree(checkpoint, ignore_errors=True)
 
 
-class _CheckpointIntegrityCallback:
+class _CheckpointIntegrityCallback(_TrainerCallbackCompat):
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
