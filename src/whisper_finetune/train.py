@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import inspect
+import json
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +19,7 @@ from .collator import DataCollatorSpeechSeq2SeqWithPadding
 from .config import AppConfig, load_config, save_config_artifacts
 from .data import (
     LENGTH_COLUMN_NAMES,
+    DatasetPart,
     _concat_or_single,
     _shuffle_dataset,
     add_length_grouping_column,
@@ -283,7 +287,69 @@ def _filter_example(example: dict[str, Any], config: AppConfig) -> bool:
     return True
 
 
-def _prepare_split(dataset: Any | None, config: AppConfig, split_name: str, processor: Any) -> Any | None:
+def _safe_cache_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "dataset"
+
+
+def _preprocess_cache_file(
+    config: AppConfig,
+    part: DatasetPart,
+    *,
+    split_name: str,
+    stage: str,
+) -> str:
+    cache_root = Path(config.cache.dataset_dir) / "preprocess"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    dataset = part.dataset
+    payload = {
+        "stage": stage,
+        "dataset_name": part.name,
+        "source_split": part.split,
+        "prepared_split": split_name,
+        "dataset_fingerprint": getattr(dataset, "_fingerprint", None),
+        "dataset_rows": len(dataset),
+        "dataset_columns": list(getattr(dataset, "column_names", [])),
+        "audio_sampling_rate": config.data.audio_sampling_rate,
+        "min_audio_seconds": config.data.min_audio_seconds,
+        "max_audio_seconds": config.data.max_audio_seconds,
+        "text_normalization": {
+            "lowercase": config.data.text_normalization.lowercase,
+            "strip": config.data.text_normalization.strip,
+            "collapse_whitespace": config.data.text_normalization.collapse_whitespace,
+        },
+        "length_grouping_key": config.training.length_grouping_key,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    return str(cache_root / f"{_safe_cache_name(part.name)}-{_safe_cache_name(part.split)}-{stage}-{digest}.arrow")
+
+
+def _combined_preprocess_cache_file(
+    config: AppConfig,
+    parts: list[DatasetPart],
+    *,
+    stage: str,
+) -> str:
+    cache_root = Path(config.cache.dataset_dir) / "preprocess"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "stage": stage,
+        "seed": config.experiment.seed,
+        "parts": [
+            {
+                "name": part.name,
+                "split": part.split,
+                "fingerprint": getattr(part.dataset, "_fingerprint", None),
+                "rows": len(part.dataset),
+            }
+            for part in parts
+        ],
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    return str(cache_root / f"combined-{stage}-{digest}.arrow")
+
+
+def _prepare_split(part: DatasetPart, config: AppConfig, split_name: str, processor: Any) -> Any | None:
+    dataset = part.dataset
     if dataset is None:
         return None
 
@@ -292,6 +358,8 @@ def _prepare_split(dataset: Any | None, config: AppConfig, split_name: str, proc
         lambda example: _filter_example(example, config),
         num_proc=workers,
         desc=f"Filtering {split_name} examples",
+        cache_file_name=_preprocess_cache_file(config, part, split_name=split_name, stage="filter"),
+        load_from_cache_file=True,
     )
     return add_length_grouping_column(
         dataset,
@@ -300,11 +368,17 @@ def _prepare_split(dataset: Any | None, config: AppConfig, split_name: str, proc
         processor=processor,
         num_proc=workers,
         split_name=split_name,
+        cache_file_name=_preprocess_cache_file(
+            config,
+            DatasetPart(name=part.name, split=part.split, dataset=dataset),
+            split_name=split_name,
+            stage=f"length-{config.training.length_grouping_key}",
+        ),
     )
 
 
 def _prepare_split_parts(
-    parts: list[Any],
+    parts: list[DatasetPart],
     config: AppConfig,
     split_name: str,
     processor: Any,
@@ -320,7 +394,15 @@ def _prepare_split_parts(
 
     dataset = _concat_or_single(prepared_parts)
     if shuffle:
-        dataset = _shuffle_dataset(dataset, seed=config.experiment.seed)
+        dataset = _shuffle_dataset(
+            dataset,
+            seed=config.experiment.seed,
+            indices_cache_file_name=_combined_preprocess_cache_file(
+                config,
+                [DatasetPart(name=part.name, split=part.split, dataset=prepared) for part, prepared in zip(parts, prepared_parts, strict=True)],
+                stage=f"{split_name}-shuffle",
+            ),
+        )
     return dataset
 
 

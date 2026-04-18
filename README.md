@@ -110,6 +110,14 @@ cache:
   dataset_dir: .cache/datasets
 ```
 
+Dataset downloads and preprocessing artifacts are stored under `dataset_dir`.
+The expensive preprocessing stages use explicit retry-safe cache files in
+`<dataset_dir>/preprocess`: duration/text filtering, length grouping, and train
+shuffle indices. If a run dies during preprocessing, rerunning the same config
+reuses completed stages instead of starting from zero. Changing filter settings,
+text normalization, length grouping, dataset fingerprints, or row counts creates
+new cache files.
+
 ### `model`
 
 Start from a base model:

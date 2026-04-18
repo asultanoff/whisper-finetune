@@ -24,7 +24,7 @@ class FakeDataset:
             return []
         return list(self.values[0].keys())
 
-    def map(self, function, batched=False, num_proc=None, desc=None):
+    def map(self, function, batched=False, num_proc=None, desc=None, **kwargs):
         if not batched:
             raise AssertionError("FakeDataset only supports batched=True in this test suite")
         batch = {column: [row[column] for row in self.values] for column in self.column_names}

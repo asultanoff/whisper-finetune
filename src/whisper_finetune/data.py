@@ -19,11 +19,18 @@ class DatasetSummary:
 
 
 @dataclass(slots=True)
+class DatasetPart:
+    name: str
+    split: str
+    dataset: Any
+
+
+@dataclass(slots=True)
 class DatasetBundle:
     train_dataset: Any | None
     eval_dataset: Any | None
-    train_parts: list[Any]
-    eval_parts: list[Any]
+    train_parts: list[DatasetPart]
+    eval_parts: list[DatasetPart]
     summaries: list[DatasetSummary]
 
 
@@ -171,11 +178,23 @@ def _concat_or_single(parts: list[Any]) -> Any | None:
     return datasets.concatenate_datasets(parts)
 
 
-def _shuffle_dataset(dataset: Any | None, seed: int) -> Any | None:
+def _shuffle_dataset(
+    dataset: Any | None,
+    seed: int,
+    *,
+    indices_cache_file_name: str | None = None,
+) -> Any | None:
     if dataset is None:
         return None
     if hasattr(dataset, "shuffle"):
-        return dataset.shuffle(seed=seed)
+        kwargs = {"seed": seed}
+        if indices_cache_file_name is not None:
+            kwargs["indices_cache_file_name"] = indices_cache_file_name
+            kwargs["load_from_cache_file"] = True
+        try:
+            return dataset.shuffle(**kwargs)
+        except TypeError:
+            return dataset.shuffle(seed=seed)
     return dataset
 
 
@@ -193,6 +212,7 @@ def add_length_grouping_column(
     processor: Any | None = None,
     num_proc: int | None = None,
     split_name: str = "dataset",
+    cache_file_name: str | None = None,
 ) -> Any | None:
     if dataset is None or length_grouping_key is None:
         return dataset
@@ -209,6 +229,8 @@ def add_length_grouping_column(
             batched=True,
             num_proc=num_proc,
             desc=f"Computing {length_grouping_key} lengths for {split_name}",
+            cache_file_name=cache_file_name,
+            load_from_cache_file=True,
         )
 
     if processor is None:
@@ -224,12 +246,14 @@ def add_length_grouping_column(
         batched=True,
         num_proc=num_proc,
         desc=f"Computing {length_grouping_key} lengths for {split_name}",
+        cache_file_name=cache_file_name,
+        load_from_cache_file=True,
     )
 
 
 def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
-    train_parts: list[Any] = []
-    eval_parts: list[Any] = []
+    train_parts: list[DatasetPart] = []
+    eval_parts: list[DatasetPart] = []
     summaries: list[DatasetSummary] = []
 
     for dataset_config in config.data.datasets:
@@ -272,10 +296,16 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
                 prompt_language=prompt_language,
             )
             eval_split = _select_limit(eval_split, dataset_config.max_validation_samples)
-            eval_parts.append(eval_split)
+            eval_parts.append(DatasetPart(name=dataset_config.source_name, split=eval_name, dataset=eval_split))
             eval_examples = len(eval_split)
 
-        train_parts.append(train_split)
+        train_parts.append(
+            DatasetPart(
+                name=dataset_config.source_name,
+                split=dataset_config.train_split,
+                dataset=train_split,
+            )
+        )
         summaries.append(
             DatasetSummary(
                 name=dataset_config.source_name,
