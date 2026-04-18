@@ -293,7 +293,10 @@ def _filter_example(example: dict[str, Any], config: AppConfig) -> bool:
     if not text:
         return False
 
-    duration_seconds = _audio_duration_seconds(example["audio"])
+    try:
+        duration_seconds = _audio_duration_seconds(example["audio"])
+    except Exception:
+        return False
     if duration_seconds < config.data.min_audio_seconds:
         return False
     if config.data.max_audio_seconds is not None and duration_seconds > config.data.max_audio_seconds:
