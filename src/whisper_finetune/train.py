@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import re
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -400,24 +402,32 @@ def _is_rank_zero() -> bool:
     return _distributed_rank() == 0
 
 
-def _distributed_barrier() -> None:
-    if _distributed_world_size() <= 1:
-        return
+@contextmanager
+def _file_lock(lock_path: Path, *, poll_seconds: float = 2.0, timeout_seconds: float = 24 * 60 * 60):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    start = time.monotonic()
+    fd: int | None = None
+    while fd is None:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, f"pid={os.getpid()} rank={_distributed_rank()}\n".encode("utf-8"))
+        except FileExistsError:
+            if time.monotonic() - start > timeout_seconds:
+                raise TimeoutError(f"Timed out waiting for preprocessing lock: {lock_path}")
+            time.sleep(poll_seconds)
     try:
-        import torch.distributed as dist
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
-        if dist.is_available() and dist.is_initialized():
-            dist.barrier()
-            return
-    except Exception:
-        pass
 
-    try:
-        from accelerate.state import PartialState
-
-        PartialState().wait_for_everyone()
-    except Exception as exc:
-        raise RuntimeError("Distributed preprocessing barrier failed") from exc
+def _preprocessing_lock_path(config: AppConfig, split_name: str) -> Path:
+    return Path(config.cache.dataset_dir) / "preprocess" / f"{_safe_cache_name(split_name)}.lock"
 
 
 def _prepare_split(part: DatasetPart, config: AppConfig, split_name: str, processor: Any) -> Any | None:
@@ -464,14 +474,10 @@ def _prepare_split_parts(
     *,
     shuffle: bool,
 ) -> Any | None:
-    if _distributed_world_size() > 1 and not _is_rank_zero():
-        _distributed_barrier()
+    if _distributed_world_size() <= 1:
         return _prepare_split_parts_on_current_rank(parts, config, split_name, processor, shuffle=shuffle)
-
-    dataset = _prepare_split_parts_on_current_rank(parts, config, split_name, processor, shuffle=shuffle)
-    if _distributed_world_size() > 1:
-        _distributed_barrier()
-    return dataset
+    with _file_lock(_preprocessing_lock_path(config, split_name)):
+        return _prepare_split_parts_on_current_rank(parts, config, split_name, processor, shuffle=shuffle)
 
 
 def _prepare_split_parts_on_current_rank(
