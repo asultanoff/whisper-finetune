@@ -269,55 +269,55 @@ data:
       validation_split: test
       audio_column: audio_path
       text_column: text
-    - repo_id: akmalsultanov/mahalla
-      alias: mahalla
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio_path
-      text_column: text
-    - repo_id: akmalsultanov/ojar
-      alias: ojar
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio_path
-      text_column: text
-    - repo_id: akmalsultanov/molhona
-      alias: molhona
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio_path
-      text_column: text
-    - repo_id: akmalsultanov/yulduzlar_mangu_yonadi
-      alias: yulduzlar
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio_path
-      text_column: text
-    - repo_id: akmalsultanov/bahor_qaytmaydi
-      alias: bahor_qaytmaydi
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio_path
-      text_column: text
-    - repo_id: akmalsultanov/champo_otli_ilon
-      alias: champo
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio_path
-      text_column: text
-    - repo_id: akmalsultanov/sheva_small
-      alias: sheva_small
-      language: uz
-      train_split: train
-      validation_split: test
-      audio_column: audio
-      text_column: text
+    # - repo_id: akmalsultanov/mahalla
+    #   alias: mahalla
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio_path
+    #   text_column: text
+    # - repo_id: akmalsultanov/ojar
+    #   alias: ojar
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio_path
+    #   text_column: text
+    # - repo_id: akmalsultanov/molhona
+    #   alias: molhona
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio_path
+    #   text_column: text
+    # - repo_id: akmalsultanov/yulduzlar_mangu_yonadi
+    #   alias: yulduzlar
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio_path
+    #   text_column: text
+    # - repo_id: akmalsultanov/bahor_qaytmaydi
+    #   alias: bahor_qaytmaydi
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio_path
+    #   text_column: text
+    # - repo_id: akmalsultanov/champo_otli_ilon
+    #   alias: champo
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio_path
+    #   text_column: text
+    # - repo_id: akmalsultanov/sheva_small
+    #   alias: sheva_small
+    #   language: uz
+    #   train_split: train
+    #   validation_split: test
+    #   audio_column: audio
+    #   text_column: text
     - repo_id: akmalsultanov/uzbooks_300hr
       alias: uzbooks
       language: uz
