@@ -338,11 +338,11 @@ training:
   learning_rate: 1.0e-4
   warmup_ratio: 0.15
   num_train_epochs: 6
-  max_steps: -1
+  max_steps: 25
   lr_scheduler_type: linear
   logging_steps: 25
-  eval_steps: 15000
-  save_steps: 5000
+  eval_steps: 15
+  save_steps: 15
   save_total_limit: 3
   generation_num_beams: 1
   predict_with_generate: true
