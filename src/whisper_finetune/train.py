@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -582,7 +583,42 @@ def _build_trainer(
     elif "tokenizer" in signature.parameters:
         trainer_kwargs["tokenizer"] = processor
 
-    return PromptedTrainer(**trainer_kwargs)
+    trainer = PromptedTrainer(**trainer_kwargs)
+    trainer.add_callback(_CheckpointRotationCallback(config.training.save_total_limit))
+    return trainer
+
+
+def _checkpoint_step(path: Path) -> int:
+    match = re.fullmatch(r"checkpoint-(\d+)", path.name)
+    return int(match.group(1)) if match else -1
+
+
+def _sorted_checkpoint_dirs(output_dir: str | Path) -> list[Path]:
+    path = Path(output_dir)
+    if not path.exists():
+        return []
+    return sorted(
+        [item for item in path.iterdir() if item.is_dir() and _checkpoint_step(item) >= 0],
+        key=_checkpoint_step,
+    )
+
+
+class _CheckpointRotationCallback:
+    def __init__(self, save_total_limit: int) -> None:
+        self.save_total_limit = save_total_limit
+
+    def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        if self.save_total_limit <= 0:
+            return
+        if not state.is_world_process_zero:
+            return
+        checkpoints = _sorted_checkpoint_dirs(args.output_dir)
+        excess = len(checkpoints) - self.save_total_limit
+        if excess <= 0:
+            return
+        for checkpoint in checkpoints[:excess]:
+            logging.info("Removing old checkpoint due to save_total_limit=%s: %s", self.save_total_limit, checkpoint)
+            shutil.rmtree(checkpoint, ignore_errors=True)
 
 
 def _log_bundle(bundle: Any) -> None:
