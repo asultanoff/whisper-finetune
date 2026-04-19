@@ -363,4 +363,3 @@ training:
   label_smoothing_factor: 0.0
   max_grad_norm: 1.0
   deepspeed_config: deepspeed/zero2.json
-  checkpoint_save_mode: full
