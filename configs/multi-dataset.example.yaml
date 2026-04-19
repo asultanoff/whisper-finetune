@@ -19,6 +19,7 @@ model:
 
 data:
   audio_sampling_rate: 16000
+  download_num_workers: 4
   preprocessing_num_workers: 4
   min_audio_seconds: 0.1
   max_audio_seconds: 30.0

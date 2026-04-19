@@ -74,7 +74,13 @@ def _datasets_module() -> Any:
     return datasets
 
 
-def _load_hf_split(dataset_config: DatasetConfig, split_name: str, default_cache_dir: str | None) -> Any:
+def _load_hf_split(
+    dataset_config: DatasetConfig,
+    split_name: str,
+    default_cache_dir: str | None,
+    *,
+    num_proc: int | None,
+) -> Any:
     datasets = _datasets_module()
     kwargs = {
         "path": dataset_config.repo_id,
@@ -83,6 +89,7 @@ def _load_hf_split(dataset_config: DatasetConfig, split_name: str, default_cache
         "revision": dataset_config.revision,
         "cache_dir": dataset_config.cache_dir or default_cache_dir,
         "trust_remote_code": dataset_config.trust_remote_code,
+        "num_proc": num_proc,
     }
     kwargs = {key: value for key, value in kwargs.items() if value is not None}
     return datasets.load_dataset(**kwargs)
@@ -262,6 +269,7 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
             dataset_config,
             dataset_config.train_split,
             default_cache_dir=config.cache.dataset_dir,
+            num_proc=config.data.download_num_workers,
         )
         train_split, eval_split = split_train_for_validation(train_split, dataset_config)
         prompt_language = dataset_config.language or config.model.language
@@ -271,6 +279,7 @@ def load_dataset_bundle(config: AppConfig) -> DatasetBundle:
                 dataset_config,
                 dataset_config.validation_split,
                 default_cache_dir=config.cache.dataset_dir,
+                num_proc=config.data.download_num_workers,
             )
 
         train_split = _canonicalize_columns(

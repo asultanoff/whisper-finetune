@@ -441,6 +441,7 @@ class DatasetConfig:
 class DataConfig:
     datasets: list[DatasetConfig]
     audio_sampling_rate: int = 16000
+    download_num_workers: int | None = None
     preprocessing_num_workers: int | None = None
     min_audio_seconds: float = 0.0
     max_audio_seconds: float | None = 30.0
@@ -453,6 +454,7 @@ class DataConfig:
             raise ConfigError("data.datasets must contain at least one dataset")
         if self.audio_sampling_rate <= 0:
             raise ConfigError("data.audio_sampling_rate must be > 0")
+        _positive_optional(self.download_num_workers, "data.download_num_workers")
         if self.min_audio_seconds < 0.0:
             raise ConfigError("data.min_audio_seconds must be >= 0")
         if self.max_audio_seconds is not None and self.max_audio_seconds <= self.min_audio_seconds:
@@ -464,6 +466,7 @@ class DataConfig:
         allowed = {
             "datasets",
             "audio_sampling_rate",
+            "download_num_workers",
             "preprocessing_num_workers",
             "min_audio_seconds",
             "max_audio_seconds",
@@ -478,6 +481,7 @@ class DataConfig:
         return cls(
             datasets=[DatasetConfig.from_dict(item) for item in datasets_raw],
             audio_sampling_rate=int(raw.get("audio_sampling_rate", 16000)),
+            download_num_workers=raw.get("download_num_workers"),
             preprocessing_num_workers=raw.get("preprocessing_num_workers"),
             min_audio_seconds=float(raw.get("min_audio_seconds", 0.0)),
             max_audio_seconds=(

@@ -84,12 +84,18 @@ def export_samples(config: AppConfig, *, dataset_selector: str | None, num_sampl
 
     dataset_config = _find_dataset_config(config, dataset_selector)
     split_name = dataset_config.train_split
-    dataset = _load_hf_split(dataset_config, split_name, default_cache_dir=config.cache.dataset_dir)
+    dataset = _load_hf_split(
+        dataset_config,
+        split_name,
+        default_cache_dir=config.cache.dataset_dir,
+        num_proc=config.data.download_num_workers,
+    )
     dataset = _canonicalize_columns(
         dataset,
         dataset_config=dataset_config,
         split_name=split_name,
         sampling_rate=config.data.audio_sampling_rate,
+        prompt_language=dataset_config.language or config.model.language,
     )
     dataset = dataset.filter(
         lambda example: _filter_example(example, config),

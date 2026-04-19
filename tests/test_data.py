@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from whisper_finetune.config import DatasetConfig, TextNormalizationConfig
 from whisper_finetune.data import (
     _canonicalize_columns,
+    _load_hf_split,
     _shuffle_dataset,
     add_length_grouping_column,
     normalize_text,
@@ -118,6 +119,23 @@ def test_canonicalize_columns_allows_configured_text_to_replace_existing_text_co
     assert "source_sentence" not in canonicalized.column_names
     assert canonicalized.values[0]["__source_dataset"] == "uzbooks"
     assert canonicalized.values[0]["__prompt_language"] == "uz"
+
+
+def test_load_hf_split_passes_download_num_proc(monkeypatch) -> None:
+    calls = []
+
+    class FakeDatasets:
+        @staticmethod
+        def load_dataset(**kwargs):
+            calls.append(kwargs)
+            return FakeDataset([])
+
+    monkeypatch.setattr("whisper_finetune.data._datasets_module", lambda: FakeDatasets)
+    config = DatasetConfig(repo_id="org/dataset", train_split="train")
+
+    _load_hf_split(config, "train", default_cache_dir=".cache/datasets", num_proc=8)
+
+    assert calls[0]["num_proc"] == 8
 
 
 def test_split_train_for_validation_uses_ratio() -> None:

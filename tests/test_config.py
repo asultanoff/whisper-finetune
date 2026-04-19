@@ -79,6 +79,27 @@ def test_data_config_accepts_max_label_tokens() -> None:
     assert config.data.max_label_tokens == 444
 
 
+def test_data_config_accepts_download_num_workers() -> None:
+    config = AppConfig.from_dict(
+        {
+            "model": {"name_or_path": "openai/whisper-small"},
+            "data": {
+                "download_num_workers": 8,
+                "datasets": [
+                    {
+                        "repo_id": "org/dataset",
+                        "train_split": "train",
+                        "audio_column": "audio",
+                        "text_column": "text",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert config.data.download_num_workers == 8
+
+
 def test_load_config_resolves_relative_deepspeed_path(tmp_path) -> None:
     config_dir = tmp_path / "configs"
     ds_dir = config_dir / "deepspeed"
