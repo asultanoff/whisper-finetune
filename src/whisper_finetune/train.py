@@ -421,7 +421,9 @@ def _filter_example(
     if max_label_tokens is not None:
         if processor is None:
             raise ValueError("processor is required when max_label_tokens is set")
-        label_token_count = len(processor.tokenizer(text, add_special_tokens=False).input_ids)
+        label_token_count = len(
+            processor.tokenizer(text, add_special_tokens=False, truncation=False, verbose=False).input_ids
+        )
         if label_token_count > max_label_tokens:
             return False
 

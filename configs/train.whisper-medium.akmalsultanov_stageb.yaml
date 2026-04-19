@@ -33,6 +33,7 @@ data:
   preprocessing_num_workers: 1
   min_audio_seconds: 0.1
   max_audio_seconds: 30.0
+  max_label_tokens: 444
   text_normalization:
     lowercase: false
     strip: true

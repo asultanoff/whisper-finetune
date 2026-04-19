@@ -60,10 +60,15 @@ def test_filter_example_skips_audio_decode_errors() -> None:
 
 def test_filter_example_drops_overlong_text() -> None:
     class FakeTokenizer:
-        def __call__(self, text, add_special_tokens=False):
+        def __init__(self) -> None:
+            self.kwargs = None
+
+        def __call__(self, text, **kwargs):
+            self.kwargs = kwargs
             return SimpleNamespace(input_ids=[1] * len(text.split()))
 
-    processor = SimpleNamespace(tokenizer=FakeTokenizer())
+    tokenizer = FakeTokenizer()
+    processor = SimpleNamespace(tokenizer=tokenizer)
 
     assert (
         _filter_example(
@@ -77,6 +82,7 @@ def test_filter_example_drops_overlong_text() -> None:
         )
         is False
     )
+    assert tokenizer.kwargs == {"add_special_tokens": False, "truncation": False, "verbose": False}
 
 
 def test_resolve_max_label_tokens_uses_model_decoder_capacity() -> None:
